@@ -1,0 +1,22 @@
+{
+  "name": "desafio-xcl",
+  "version": "0.1.0",
+  "description": "CRUD básico em Node.js (Express) - base para o desafio XCL",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test"
+  },
+  "keywords": [
+    "crud",
+    "express",
+    "node"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}
