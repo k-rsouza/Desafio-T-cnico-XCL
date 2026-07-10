@@ -3,74 +3,156 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Tarefas — Desafio XCL</title>
+  <title>XCL Tasks</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <div class="container">
-    <header class="header">
-      <h1>Minhas tarefas</h1>
-      <p class="subtitle" id="summary">Carregando…</p>
-    </header>
+  <div class="layout">
+    <!-- ===== Sidebar ===== -->
+    <aside class="sidebar" id="sidebar">
+      <div class="brand"> <span>XCL <em>Tasks</em></span></div>
 
-    <!-- Formulário de nova tarefa -->
-    <form id="new-task-form" class="new-task" autocomplete="off">
-      <div class="new-task-row">
-        <input
-          type="text"
-          id="new-name"
-          placeholder="O que precisa ser feito?"
-          maxlength="120"
-          required
-        />
-        <input
-          type="text"
-          id="new-description"
-          placeholder="Descrição (opcional)"
-          maxlength="300"
-        />
+      <nav class="nav">
+        <button class="nav-item active" data-view="dashboard" id="nav-dashboard">
+          <span class="nav-icon">▦</span> Dashboard
+        </button>
+        <button class="nav-item" data-view="tasks">
+          <span class="nav-icon">☰</span> Tarefas
+        </button>
+      </nav>
+
+      <div class="team-block" id="team-block" hidden>
+        <div class="team-header">
+          <span>Minha equipe</span>
+          <button class="icon-btn" id="open-add-user" title="Adicionar membro">+</button>
+        </div>
+        <ul class="team-list" id="team-list"></ul>
       </div>
-      <div class="new-task-row">
+
+      <div class="me-block">
+        <span class="avatar" id="me-avatar"></span>
+        <div class="me-info">
+          <div class="me-name" id="me-name"></div>
+          <div class="me-role" id="me-role"></div>
+        </div>
+        <button class="icon-btn" id="logout-btn" title="Sair">⏻</button>
+      </div>
+    </aside>
+    <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
+
+    <!-- ===== Conteúdo ===== -->
+    <div class="main">
+      <header class="topbar">
+        <button class="icon-btn menu-btn" id="menu-btn">☰</button>
+        <h1 id="view-title">Dashboard</h1>
+      </header>
+
+      <!-- Dashboard (admin) -->
+      <section id="view-dashboard" hidden>
+        <div class="stats-grid" id="stats-grid"></div>
+        <div class="dash-columns">
+          <div class="card chart-card">
+            <div class="card-header">
+              <h2>Atividade — últimos 7 dias</h2>
+              <div class="legend">
+                <span><i class="dot dot-created"></i> Criadas</span>
+                <span><i class="dot dot-completed"></i> Concluídas</span>
+              </div>
+            </div>
+            <div id="chart"></div>
+          </div>
+          <div class="card team-card">
+            <div class="card-header"><h2>Desempenho da equipe</h2></div>
+            <ul class="capacity-list" id="capacity-list"></ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- Tarefas -->
+      <section id="view-tasks" hidden>
+        <form id="new-task-form" class="new-task card" autocomplete="off">
+          <div class="new-task-row">
+            <input type="text" id="new-name" placeholder="O que precisa ser feito?" maxlength="120" required />
+            <input type="text" id="new-description" placeholder="Descrição (opcional)" maxlength="300" />
+          </div>
+          <div class="new-task-row">
+            <label class="field">
+              <span class="field-label">Prioridade</span>
+              <select id="new-priority">
+                <option value="baixa">Baixa</option>
+                <option value="media" selected>Média</option>
+                <option value="alta">Alta</option>
+              </select>
+            </label>
+            <label class="field">
+              <span class="field-label">Prazo (opcional)</span>
+              <input type="datetime-local" id="new-due-date" />
+            </label>
+            <button type="submit" class="btn btn-primary">Adicionar</button>
+          </div>
+        </form>
+
+        <div class="filters-bar">
+          <nav class="filters" role="tablist" aria-label="Filtrar por status">
+            <button class="filter active" data-filter="todas">Todas</button>
+            <button class="filter" data-filter="pendente">Pendentes</button>
+            <button class="filter" data-filter="concluida">Concluídas</button>
+          </nav>
+          <div class="filters-selects">
+            <label class="field field-inline">
+              <span class="field-label">Prioridade</span>
+              <select id="priority-filter">
+                <option value="todas" selected>Todas</option>
+                <option value="alta">Alta</option>
+                <option value="media">Média</option>
+                <option value="baixa">Baixa</option>
+              </select>
+            </label>
+            <label class="field field-inline" id="member-filter-wrap" hidden>
+              <span class="field-label">Membro</span>
+              <select id="member-filter"><option value="todos" selected>Todos</option></select>
+            </label>
+          </div>
+        </div>
+
+        <ul id="task-list" class="task-list"></ul>
+        <p id="empty-state" class="empty-state" hidden>Nenhuma tarefa por aqui. 🎉</p>
+        <p id="error-state" class="error-state" hidden></p>
+      </section>
+    </div>
+  </div>
+
+  <!-- ===== Modal: adicionar membro (admin) ===== -->
+  <div class="modal-backdrop" id="user-modal" hidden>
+    <div class="modal card">
+      <div class="card-header">
+        <h2>Adicionar membro</h2>
+        <button class="icon-btn" id="close-add-user">✕</button>
+      </div>
+      <form id="add-user-form" autocomplete="off">
         <label class="field">
-          <span class="field-label">Prioridade</span>
-          <select id="new-priority">
-            <option value="baixa">Baixa</option>
-            <option value="media" selected>Média</option>
-            <option value="alta">Alta</option>
+          <span class="field-label">Nome</span>
+          <input type="text" id="user-name" maxlength="60" required />
+        </label>
+        <label class="field">
+          <span class="field-label">E-mail</span>
+          <input type="email" id="user-email" required />
+        </label>
+        <label class="field">
+          <span class="field-label">Senha inicial</span>
+          <input type="password" id="user-password" minlength="6" required />
+        </label>
+        <label class="field">
+          <span class="field-label">Papel</span>
+          <select id="user-role">
+            <option value="member" selected>Membro</option>
+            <option value="admin">Administrador</option>
           </select>
         </label>
-        <label class="field">
-          <span class="field-label">Prazo (opcional)</span>
-          <input type="datetime-local" id="new-due-date" />
-        </label>
-        <button type="submit" class="btn btn-primary">Adicionar</button>
-      </div>
-    </form>
-
-    <!-- Filtros -->
-    <div class="filters-bar">
-      <nav class="filters" role="tablist" aria-label="Filtrar por status">
-        <button class="filter active" data-filter="todas">Todas</button>
-        <button class="filter" data-filter="pendente">Pendentes</button>
-        <button class="filter" data-filter="concluida">Concluídas</button>
-      </nav>
-      <label class="field field-inline">
-        <span class="field-label">Prioridade</span>
-        <select id="priority-filter">
-          <option value="todas" selected>Todas</option>
-          <option value="alta">Alta</option>
-          <option value="media">Média</option>
-          <option value="baixa">Baixa</option>
-        </select>
-      </label>
+        <p class="auth-error" id="user-error" hidden></p>
+        <button type="submit" class="btn btn-primary btn-block">Cadastrar</button>
+      </form>
     </div>
-
-    <!-- Lista de tarefas -->
-    <main>
-      <ul id="task-list" class="task-list"></ul>
-      <p id="empty-state" class="empty-state" hidden>Nenhuma tarefa por aqui. 🎉</p>
-      <p id="error-state" class="error-state" hidden></p>
-    </main>
   </div>
 
   <script src="app.js"></script>

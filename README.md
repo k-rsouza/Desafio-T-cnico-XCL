@@ -89,11 +89,16 @@ Parar os containers: `docker compose down` (dados preservados nos volumes
 
 ```
 src/
-└── server.js            # servidor Express + rotas do CRUD (tudo em um arquivo)
+├── server.js            # bootstrap: liga middlewares, rotas e migrações
+├── db.js                # conexão com o MongoDB
+├── auth.js              # senhas (scrypt), sessões, middlewares e rotas /auth
+├── items.js             # CRUD de tarefas (com posse por usuário)
+└── team.js              # equipe (/users) e métricas do dashboard (/stats)
 public/                  # frontend (servido pelo próprio Express)
-├── index.html           # estrutura da página
-├── styles.css           # estilo responsivo (mobile-first, tema claro/escuro)
-└── app.js               # lógica: chama a API via fetch e renderiza as tarefas
+├── login.html           # tela de login / criação do 1º admin
+├── index.html           # app: dashboard + tarefas
+├── styles.css           # tema dark responsivo (mobile-first)
+└── app.js               # lógica: auth, dashboard (gráfico SVG), CRUD, equipe
 docker-compose.yml       # serviços mongo + n8n
 .env.example             # modelo de variáveis de ambiente
 postman_collection.json  # coleção do Postman para testar a API
@@ -101,9 +106,58 @@ postman_collection.json  # coleção do Postman para testar a API
 
 ---
 
+## Autenticação e papéis
+
+A aplicação é multiusuário, com dois papéis:
+
+- **admin** — vê o dashboard da equipe, todas as tarefas (com o dono de cada
+  uma), cadastra membros pela interface e edita qualquer tarefa.
+- **member** — cria, edita, conclui e exclui **apenas as próprias** tarefas.
+
+Fluxo: na **primeira execução** (banco sem usuários), a tela de login vira
+"Criar conta do administrador" — o primeiro usuário registrado é o admin e
+herda as tarefas criadas antes do multiusuário. Depois disso o registro fecha
+e só o admin cadastra novos usuários (botão **+** na sidebar, ou `POST /users`).
+
+Sessões: token aleatório guardado na coleção `sessions` (7 dias). O login
+devolve o token no corpo da resposta; o frontend guarda no `localStorage` e o
+envia em **`Authorization: Bearer <token>`**. Um cookie httpOnly `sid` também é
+setado como fallback (usado pelo Postman). O header é o caminho principal
+porque funciona onde o cookie é bloqueado — dentro de iframes/webviews (ex.:
+o preview mobile do VS Code, que renderiza a página num iframe de outra origem).
+Senhas: hash com `scrypt` (nativo do Node, sem dependência).
+
+| Método | Rota              | Descrição                              | Acesso  |
+| ------ | ----------------- | -------------------------------------- | ------- |
+| GET    | `/auth/bootstrap` | Diz se é a 1ª execução (sem usuários)  | público |
+| POST   | `/auth/register`  | Cria o 1º usuário (admin) e loga       | público (só 1ª vez) |
+| POST   | `/auth/dev-admin` | **Dev only.** Autentica qualquer e-mail passado como admin — cria ou promove, não importa o estado do banco | público |
+| POST   | `/auth/login`     | Login com e-mail e senha               | público |
+| POST   | `/auth/logout`    | Encerra a sessão                       | logado  |
+| GET    | `/auth/me`        | Usuário da sessão atual                | logado  |
+| GET    | `/users`          | Lista a equipe                         | admin   |
+| POST   | `/users`          | Cadastra membro (`name`, `email`, `password`, `role`) | admin |
+| DELETE | `/users/:id`      | Remove um membro                       | admin   |
+| GET    | `/stats`          | Métricas do dashboard                  | admin   |
+
+`DELETE /users/:id` recusa (400) remover a própria conta ou o único
+administrador restante — evita a equipe ficar sem admin.
+
+> **`/auth/dev-admin`:** atalho para testar pelo Postman sem precisar do banco
+> vazio (o `/register` normal só funciona na 1ª execução). Passe
+> `{ name, email, password }` — se o e-mail já existir, promove a admin e
+> atualiza a senha; se não existir, cria. Sempre autentica na hora. Existe só
+> para agilizar testes locais; não deixe exposta se este projeto sair do
+> ambiente local (é um caminho de auto-promoção a admin sem nenhuma trava).
+
+`GET /stats` retorna: totais (tarefas, concluídas, pendentes, vencidas, taxa
+de conclusão, **tempo médio de conclusão** em horas), atividade dos últimos 7
+dias (criadas × concluídas por dia) e a situação por membro.
+
 ## API REST
 
-Recurso: `items` (tarefas). Campos aceitos no corpo (JSON):
+Recurso: `items` (tarefas). **Todas as rotas exigem sessão.** Membro opera só
+as próprias tarefas; admin, todas. Campos aceitos no corpo (JSON):
 
 | Campo         | Obrigatório | Valores / formato                                | Padrão     |
 | ------------- | ----------- | ------------------------------------------------ | ---------- |
@@ -113,8 +167,10 @@ Recurso: `items` (tarefas). Campos aceitos no corpo (JSON):
 | `priority`    | não         | `baixa` \| `media` \| `alta`                     | `media`    |
 | `dueDate`     | não         | data ISO (ex.: `2026-07-15T14:30:00Z`) ou `null` | `null`     |
 
-O banco adiciona automaticamente `_id`, `createdAt` e `updatedAt`. Valores
-inválidos em `status`, `priority` ou `dueDate` retornam **400**.
+O banco adiciona automaticamente `_id`, `userId` (dono), `createdAt`,
+`updatedAt` e `completedAt` (preenchido ao concluir — base da métrica de tempo
+médio). Valores inválidos em `status`, `priority` ou `dueDate` retornam **400**;
+tarefa de outro dono, **403**.
 
 ### Rotas
 
@@ -157,13 +213,23 @@ Para testar no Postman, importe [`postman_collection.json`](postman_collection.j
 ## Frontend
 
 Interface web em HTML/CSS/JS puro (sem framework), servida pelo próprio Express
-em `http://localhost:3000`.
+em `http://localhost:3000`. Tema **dark** de dashboard, com sidebar fixa
+(gaveta no mobile).
 
-- Criar, editar, concluir (checkbox) e excluir tarefas
-- Definir **prioridade** (dropdown) e **prazo** (data + hora) na criação
-- Filtrar por **status** (todas / pendentes / concluídas) e por **prioridade**
-- Badge de prioridade colorido e badge de prazo (vira ⚠️ vermelho quando vencido)
-- Responsiva (mobile e desktop) e com **tema claro/escuro** automático
+**Dashboard (admin):**
+- Stat tiles: concluídas, taxa de conclusão, pendentes/vencidas e tempo médio
+  de conclusão
+- Gráfico de barras (SVG feito à mão, sem biblioteca): criadas × concluídas
+  nos últimos 7 dias
+- Painel "Desempenho da equipe": avatar, progresso de conclusão e vencidas
+  por membro
+- Sidebar com a equipe e botão **+** para cadastrar membro (modal)
+
+**Tarefas:**
+- Criar, editar, concluir (checkbox) e excluir
+- Prioridade (dropdown) e prazo (data + hora) na criação e na edição
+- Filtros por status, prioridade e (admin) por **membro**
+- Badges de prioridade, prazo (⚠️ quando vencido) e dono da tarefa (admin)
 
 O campo de prazo usa `datetime-local` e a hora local é convertida para **ISO
 UTC** no navegador antes de enviar — assim o horário fica sem ambiguidade de fuso.

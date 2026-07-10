@@ -1,31 +1,65 @@
 // ===== Estado =====
-let tasks = [];              // todas as tarefas vindas da API
-let filter = 'todas';        // filtro de status: todas | pendente | concluida
-let priorityFilter = 'todas';// filtro de prioridade: todas | baixa | media | alta
-let editingId = null;        // id da tarefa em edição (ou null)
+let me = null;            // usuário logado
+let team = [];            // equipe (apenas admin)
+let tasks = [];
+let stats = null;
+let view = 'dashboard';   // dashboard | tasks
+let filter = 'todas';
+let priorityFilter = 'todas';
+let memberFilter = 'todos';
+let editingId = null;
 
 const PRIORITY_LABELS = { alta: 'Alta', media: 'Média', baixa: 'Baixa' };
 
-// ===== Elementos =====
-const form = document.getElementById('new-task-form');
-const nameInput = document.getElementById('new-name');
-const descInput = document.getElementById('new-description');
-const priorityInput = document.getElementById('new-priority');
-const dueDateInput = document.getElementById('new-due-date');
-const list = document.getElementById('task-list');
-const emptyState = document.getElementById('empty-state');
-const errorState = document.getElementById('error-state');
-const summary = document.getElementById('summary');
-const filterButtons = document.querySelectorAll('.filter');
-const priorityFilterSelect = document.getElementById('priority-filter');
+// ===== Helpers =====
+const $ = (id) => document.getElementById(id);
 
-// ===== Helpers de data =====
-// Converte o valor de um <input datetime-local> (hora local) para ISO UTC.
+async function api(path, options = {}) {
+  // Token da sessão vai no header Authorization — funciona em iframe/webview,
+  // onde o cookie pode ser bloqueado pelo navegador.
+  const token = localStorage.getItem('sid');
+  const res = await fetch(path, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...options.headers,
+    },
+  });
+  if (res.status === 401) {
+    localStorage.removeItem('sid');
+    location.href = '/login.html';
+    throw new Error('Sessão expirada');
+  }
+  if (res.status === 204) return null;
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.error || `Erro ${res.status}`);
+  return body;
+}
+
+function initials(name) {
+  return name
+    .split(/\s+/)
+    .map((p) => p[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join('')
+    .toUpperCase();
+}
+
+function avatarEl(user, small = false) {
+  const span = document.createElement('span');
+  span.className = `avatar${small ? ' sm' : ''}`;
+  span.style.background = user.color || 'var(--accent)';
+  span.textContent = initials(user.name);
+  span.title = user.name;
+  return span;
+}
+
 function inputToIso(value) {
   return value ? new Date(value).toISOString() : null;
 }
 
-// Converte uma data ISO (UTC) para o formato do <input datetime-local> (hora local).
 function isoToInputValue(iso) {
   if (!iso) return '';
   const d = new Date(iso);
@@ -33,56 +67,201 @@ function isoToInputValue(iso) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-// Formata a data para exibição amigável (ex.: "15/07 14:30").
 function formatDue(iso) {
   return new Date(iso).toLocaleString('pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
+    day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
   });
 }
 
-// ===== Chamadas à API =====
-// Mesma origem do servidor Express, então basta o caminho relativo.
-async function api(path, options = {}) {
-  const res = await fetch(path, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
-  });
-  if (res.status === 204) return null;
-  const body = await res.json();
-  if (!res.ok) throw new Error(body.error || `Erro ${res.status}`);
-  return body;
+function formatHours(h) {
+  if (h == null) return '—';
+  if (h < 1) return `${Math.round(h * 60)} min`;
+  if (h < 48) return `${h.toFixed(1)} h`;
+  return `${(h / 24).toFixed(1)} dias`;
 }
 
+// ===== Inicialização =====
+async function init() {
+  try {
+    me = await api('/auth/me');
+  } catch {
+    return; // já redirecionou pro login
+  }
+
+  // Cabeçalho do usuário logado
+  $('me-avatar').replaceWith(Object.assign(avatarEl(me), { id: 'me-avatar' }));
+  $('me-name').textContent = me.name;
+  $('me-role').textContent = me.role === 'admin' ? 'Administrador' : 'Membro';
+
+  if (me.role === 'admin') {
+    $('team-block').hidden = false;
+    $('member-filter-wrap').hidden = false;
+    await loadTeam();
+    switchView('dashboard');
+  } else {
+    // Membro não tem dashboard de equipe — vai direto para as tarefas.
+    $('nav-dashboard').style.display = 'none';
+    switchView('tasks');
+  }
+
+  await loadTasks();
+}
+
+// ===== Navegação entre views =====
+function switchView(next) {
+  view = next;
+  $('view-dashboard').hidden = view !== 'dashboard';
+  $('view-tasks').hidden = view !== 'tasks';
+  $('view-title').textContent = view === 'dashboard' ? 'Dashboard' : 'Tarefas';
+  document.querySelectorAll('.nav-item').forEach((b) => {
+    b.classList.toggle('active', b.dataset.view === view);
+  });
+  closeSidebar();
+  if (view === 'dashboard' && me?.role === 'admin') loadStats();
+}
+
+document.querySelectorAll('.nav-item').forEach((btn) => {
+  btn.addEventListener('click', () => switchView(btn.dataset.view));
+});
+
+// ===== Sidebar mobile =====
+function closeSidebar() {
+  $('sidebar').classList.remove('open');
+  $('sidebar-backdrop').classList.remove('show');
+}
+
+$('menu-btn').addEventListener('click', () => {
+  $('sidebar').classList.add('open');
+  $('sidebar-backdrop').classList.add('show');
+});
+$('sidebar-backdrop').addEventListener('click', closeSidebar);
+
+$('logout-btn').addEventListener('click', async () => {
+  await api('/auth/logout', { method: 'POST' });
+  localStorage.removeItem('sid');
+  location.href = '/login.html';
+});
+
+// ===== Equipe (sidebar) =====
+async function loadTeam() {
+  team = await api('/users');
+  const list = $('team-list');
+  list.replaceChildren(
+    ...team.map((u) => {
+      const li = document.createElement('li');
+      li.append(avatarEl(u, true), document.createTextNode(u.name));
+      return li;
+    }),
+  );
+
+  // Filtro de membro (view de tarefas)
+  const sel = $('member-filter');
+  sel.replaceChildren(new Option('Todos', 'todos'));
+  team.forEach((u) => sel.append(new Option(u.name, String(u._id))));
+  sel.value = memberFilter;
+}
+
+// ===== Dashboard =====
+async function loadStats() {
+  stats = await api('/stats');
+  renderStatTiles();
+  renderChart();
+  renderCapacity();
+}
+
+function renderStatTiles() {
+  const t = stats.totals;
+  const tiles = [
+    { label: 'Tarefas concluídas', value: t.completed, sub: `de ${t.tasks} no total`, cls: '' },
+    { label: 'Taxa de conclusão', value: `${t.completionRate}%`, sub: 'de todas as tarefas', cls: t.completionRate >= 50 ? 'good' : '' },
+    { label: 'Pendentes', value: t.pending, sub: t.overdue ? `⚠️ ${t.overdue} vencida(s)` : 'nenhuma vencida', cls: t.overdue ? 'bad' : 'good' },
+    { label: 'Tempo médio de conclusão', value: formatHours(t.avgCompletionHours), sub: 'da criação à conclusão', cls: '' },
+  ];
+  $('stats-grid').replaceChildren(
+    ...tiles.map(({ label, value, sub, cls }) => {
+      const div = document.createElement('div');
+      div.className = 'card stat-tile';
+      div.innerHTML = `
+        <span class="stat-label">${label}</span>
+        <span class="stat-value">${value}</span>
+        <span class="stat-sub ${cls}">${sub}</span>`;
+      return div;
+    }),
+  );
+}
+
+// Gráfico de barras (SVG feito à mão — sem biblioteca)
+function renderChart() {
+  const days = stats.last7days;
+  const W = 560, H = 190, padX = 10, padTop = 12, padBottom = 26;
+  const innerH = H - padTop - padBottom;
+  const max = Math.max(1, ...days.flatMap((d) => [d.created, d.completed]));
+  const groupW = (W - padX * 2) / days.length;
+  const barW = Math.min(16, groupW / 3.2);
+
+  let svg = '';
+  // linhas de grade horizontais
+  for (let i = 0; i <= 3; i++) {
+    const y = padTop + (innerH / 3) * i;
+    svg += `<line class="chart-grid" x1="${padX}" y1="${y}" x2="${W - padX}" y2="${y}"/>`;
+  }
+  days.forEach((d, i) => {
+    const cx = padX + i * groupW + groupW / 2;
+    const h1 = (d.created / max) * innerH;
+    const h2 = (d.completed / max) * innerH;
+    svg += `<rect class="bar-created" x="${cx - barW - 1.5}" y="${padTop + innerH - h1}" width="${barW}" height="${Math.max(h1, 2)}" rx="3"/>`;
+    svg += `<rect class="bar-completed" x="${cx + 1.5}" y="${padTop + innerH - h2}" width="${barW}" height="${Math.max(h2, 2)}" rx="3"/>`;
+    const [, m, day] = d.date.split('-');
+    svg += `<text class="chart-label" x="${cx}" y="${H - 8}" text-anchor="middle">${day}/${m}</text>`;
+  });
+
+  $('chart').innerHTML = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${svg}</svg>`;
+}
+
+function renderCapacity() {
+  $('capacity-list').replaceChildren(
+    ...stats.members.map((m) => {
+      const li = document.createElement('li');
+      li.className = 'capacity-item';
+
+      const info = document.createElement('div');
+      info.className = 'capacity-info';
+      const pct = m.total ? Math.round((m.completed / m.total) * 100) : 0;
+      info.innerHTML = `
+        <div class="capacity-top">
+          <span class="capacity-name">${m.name}</span>
+          <span class="capacity-count">${m.completed}/${m.total} concluídas${m.overdue ? ` · <span class="late">${m.overdue} vencida(s)</span>` : ''}</span>
+        </div>
+        <div class="progress"><div class="progress-fill" style="width:${pct}%"></div></div>`;
+
+      li.append(avatarEl(m), info);
+      return li;
+    }),
+  );
+}
+
+// ===== Tarefas =====
 async function loadTasks() {
   try {
     tasks = await api('/items');
-    errorState.hidden = true;
-    render();
+    $('error-state').hidden = true;
+    renderTasks();
   } catch (err) {
-    errorState.textContent = `Não foi possível carregar as tarefas: ${err.message}`;
-    errorState.hidden = false;
+    $('error-state').textContent = `Não foi possível carregar as tarefas: ${err.message}`;
+    $('error-state').hidden = false;
   }
 }
 
-// ===== Renderização =====
-function render() {
+function renderTasks() {
   const visible = tasks.filter((t) => {
     const statusOk = filter === 'todas' || t.status === filter;
     const priorityOk = priorityFilter === 'todas' || t.priority === priorityFilter;
-    return statusOk && priorityOk;
+    const memberOk = memberFilter === 'todos' || t.userId === memberFilter;
+    return statusOk && priorityOk && memberOk;
   });
 
-  const pending = tasks.filter((t) => t.status === 'pendente').length;
-  summary.textContent =
-    tasks.length === 0
-      ? 'Nenhuma tarefa cadastrada'
-      : `${tasks.length} tarefa(s) — ${pending} pendente(s)`;
-
-  emptyState.hidden = visible.length > 0;
-  list.replaceChildren(...visible.map(renderTask));
+  $('empty-state').hidden = visible.length > 0;
+  $('task-list').replaceChildren(...visible.map(renderTask));
 }
 
 function renderTask(task) {
@@ -94,7 +273,6 @@ function renderTask(task) {
     return li;
   }
 
-  // Checkbox de concluir
   const toggle = document.createElement('input');
   toggle.type = 'checkbox';
   toggle.className = 'task-toggle';
@@ -102,7 +280,6 @@ function renderTask(task) {
   toggle.title = toggle.checked ? 'Marcar como pendente' : 'Marcar como concluída';
   toggle.addEventListener('change', () => toggleStatus(task));
 
-  // Nome + descrição + metadados
   const body = document.createElement('div');
   body.className = 'task-body';
 
@@ -120,7 +297,6 @@ function renderTask(task) {
 
   body.appendChild(renderMeta(task));
 
-  // Ações
   const actions = document.createElement('div');
   actions.className = 'task-actions';
 
@@ -130,7 +306,7 @@ function renderTask(task) {
   editBtn.title = 'Editar';
   editBtn.addEventListener('click', () => {
     editingId = task._id;
-    render();
+    renderTasks();
   });
 
   const deleteBtn = document.createElement('button');
@@ -144,7 +320,6 @@ function renderTask(task) {
   return li;
 }
 
-// Badges de prioridade e prazo
 function renderMeta(task) {
   const meta = document.createElement('div');
   meta.className = 'task-meta';
@@ -160,8 +335,18 @@ function renderMeta(task) {
     const due = document.createElement('span');
     due.className = `badge badge-due${overdue ? ' overdue' : ''}`;
     due.textContent = `${overdue ? '⚠️' : '📅'} ${formatDue(task.dueDate)}`;
-    if (overdue) due.title = 'Prazo vencido';
     meta.appendChild(due);
+  }
+
+  // Admin vê de quem é cada tarefa.
+  if (me.role === 'admin') {
+    const owner = team.find((u) => String(u._id) === task.userId);
+    if (owner) {
+      const chip = document.createElement('span');
+      chip.className = 'badge badge-owner';
+      chip.append(avatarEl(owner, true), document.createTextNode(owner.name));
+      meta.appendChild(chip);
+    }
   }
 
   return meta;
@@ -183,16 +368,12 @@ function renderEditForm(task) {
   descField.maxLength = 300;
   descField.placeholder = 'Descrição (opcional)';
 
-  // Prioridade + prazo lado a lado
   const row = document.createElement('div');
   row.className = 'edit-fields';
 
   const prioField = document.createElement('select');
   for (const value of ['baixa', 'media', 'alta']) {
-    const opt = document.createElement('option');
-    opt.value = value;
-    opt.textContent = PRIORITY_LABELS[value];
-    if ((task.priority ?? 'media') === value) opt.selected = true;
+    const opt = new Option(PRIORITY_LABELS[value], value, false, (task.priority ?? 'media') === value);
     prioField.appendChild(opt);
   }
 
@@ -216,7 +397,7 @@ function renderEditForm(task) {
   cancel.textContent = 'Cancelar';
   cancel.addEventListener('click', () => {
     editingId = null;
-    render();
+    renderTasks();
   });
 
   actions.append(save, cancel);
@@ -236,7 +417,7 @@ function renderEditForm(task) {
       });
       tasks = tasks.map((t) => (t._id === task._id ? updated : t));
       editingId = null;
-      render();
+      renderTasks();
     } catch (err) {
       alert(err.message);
     }
@@ -246,7 +427,6 @@ function renderEditForm(task) {
   return editForm;
 }
 
-// ===== Ações =====
 async function toggleStatus(task) {
   const status = task.status === 'concluida' ? 'pendente' : 'concluida';
   try {
@@ -255,10 +435,10 @@ async function toggleStatus(task) {
       body: JSON.stringify({ status }),
     });
     tasks = tasks.map((t) => (t._id === task._id ? updated : t));
-    render();
+    renderTasks();
   } catch (err) {
     alert(err.message);
-    render(); // desfaz o checkbox visualmente
+    renderTasks();
   }
 }
 
@@ -267,30 +447,30 @@ async function removeTask(task) {
   try {
     await api(`/items/${task._id}`, { method: 'DELETE' });
     tasks = tasks.filter((t) => t._id !== task._id);
-    render();
+    renderTasks();
   } catch (err) {
     alert(err.message);
   }
 }
 
-form.addEventListener('submit', async (e) => {
+$('new-task-form').addEventListener('submit', async (e) => {
   e.preventDefault();
-  const button = form.querySelector('button[type="submit"]');
+  const button = e.target.querySelector('button[type="submit"]');
   button.disabled = true;
   try {
     const created = await api('/items', {
       method: 'POST',
       body: JSON.stringify({
-        name: nameInput.value.trim(),
-        description: descInput.value.trim() || null,
-        priority: priorityInput.value,
-        dueDate: inputToIso(dueDateInput.value),
+        name: $('new-name').value.trim(),
+        description: $('new-description').value.trim() || null,
+        priority: $('new-priority').value,
+        dueDate: inputToIso($('new-due-date').value),
       }),
     });
     tasks.push(created);
-    form.reset();
-    nameInput.focus();
-    render();
+    e.target.reset();
+    $('new-name').focus();
+    renderTasks();
   } catch (err) {
     alert(err.message);
   } finally {
@@ -298,18 +478,57 @@ form.addEventListener('submit', async (e) => {
   }
 });
 
-filterButtons.forEach((btn) => {
+// ===== Filtros =====
+document.querySelectorAll('.filter').forEach((btn) => {
   btn.addEventListener('click', () => {
     filter = btn.dataset.filter;
-    filterButtons.forEach((b) => b.classList.toggle('active', b === btn));
-    render();
+    document.querySelectorAll('.filter').forEach((b) => b.classList.toggle('active', b === btn));
+    renderTasks();
   });
 });
 
-priorityFilterSelect.addEventListener('change', () => {
-  priorityFilter = priorityFilterSelect.value;
-  render();
+$('priority-filter').addEventListener('change', (e) => {
+  priorityFilter = e.target.value;
+  renderTasks();
 });
 
-// ===== Inicialização =====
-loadTasks();
+$('member-filter').addEventListener('change', (e) => {
+  memberFilter = e.target.value;
+  renderTasks();
+});
+
+// ===== Modal: adicionar membro =====
+$('open-add-user').addEventListener('click', () => {
+  $('user-modal').hidden = false;
+  $('user-name').focus();
+});
+$('close-add-user').addEventListener('click', () => ($('user-modal').hidden = true));
+$('user-modal').addEventListener('click', (e) => {
+  if (e.target === $('user-modal')) $('user-modal').hidden = true;
+});
+
+$('add-user-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const errEl = $('user-error');
+  errEl.hidden = true;
+  try {
+    await api('/users', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: $('user-name').value.trim(),
+        email: $('user-email').value.trim(),
+        password: $('user-password').value,
+        role: $('user-role').value,
+      }),
+    });
+    e.target.reset();
+    $('user-modal').hidden = true;
+    await loadTeam();
+    if (view === 'dashboard') await loadStats();
+  } catch (err) {
+    errEl.textContent = err.message;
+    errEl.hidden = false;
+  }
+});
+
+init();

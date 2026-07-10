@@ -1,0 +1,174 @@
+{
+  "name": "My workflow 2",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 8
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -420,
+        20
+      ],
+      "id": "24e191c4-95f3-4c93-b3c4-7c65581e3de3",
+      "name": "Schedule Trigger1",
+      "notesInFlow": true,
+      "notes": "Aciona trigger do workflow a cada x tempo"
+    },
+    {
+      "parameters": {
+        "operation": "aggregate",
+        "collection": "items",
+        "query": "=[\n  { \"$match\": { \"status\": \"pendente\", \"dueDate\": { \"$ne\": null, \"$lte\": \"{{ $now.plus({ hours: 24 }).toUTC().toISO() }}\" } } },\n  { \"$group\": { \"_id\": \"$userId\", \"tasks\": { \"$push\": { \"name\": \"$name\", \"priority\": \"$priority\", \"dueDate\": \"$dueDate\" } } } },\n  { \"$addFields\": { \"userObjId\": { \"$toObjectId\": \"$_id\" } } },\n  { \"$lookup\": { \"from\": \"users\", \"localField\": \"userObjId\", \"foreignField\": \"_id\", \"as\": \"user\" } },\n  { \"$unwind\": \"$user\" },\n  { \"$project\": { \"_id\": 0, \"email\": \"$user.email\", \"name\": \"$user.name\", \"tasks\": 1 } }\n]"
+      },
+      "type": "n8n-nodes-base.mongoDb",
+      "typeVersion": 1.2,
+      "position": [
+        -200,
+        20
+      ],
+      "id": "84decf80-7685-4de2-bd9d-5f10ef2b1876",
+      "name": "MongoDB1",
+      "credentials": {
+        "mongoDb": {
+          "id": "BxvSzQC6ObzK4eHK",
+          "name": "MongoDB account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "8b106b42-fe57-425c-a999-d125689880b5",
+              "leftValue": "={{ $input.all().length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        20,
+        20
+      ],
+      "id": "fea73f3c-171b-450d-90b6-fc93b1029220",
+      "name": "If1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const grupos = $input.all().map((i) => i.json);\nif (grupos.length === 0) return []; // ninguém com tarefa vencendo -> nenhum e-mail\n\nconst prioridade = { alta: 'Alta', media: 'Média', baixa: 'Baixa' };\nconst agora = new Date();\nconst fmt = (iso) => new Date(iso).toLocaleString('pt-BR', {\n  day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',\n  timeZone: 'America/Sao_Paulo',\n});\n\nreturn grupos.map((g) => {\n  const linhas = g.tasks.map((t) => {\n    const vencida = new Date(t.dueDate) < agora;\n    const marca = vencida ? '⚠️ <strong>VENCIDA</strong>' : '📅';\n    return `<li><strong>${t.name}</strong> — prioridade ${prioridade[t.priority] || t.priority} — ${marca} ${fmt(t.dueDate)}</li>`;\n  }).join('');\n  const html = `<h2>⏰ Olá, ${g.name}!</h2><p>Estas tarefas suas já venceram ou vencem nas próximas 24h:</p><ul>${linhas}</ul>`;\n  return { json: { email: g.email, name: g.name, html, total: g.tasks.length } };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        -80
+      ],
+      "id": "f927cd32-16ec-41f6-a9e8-299f383af36a",
+      "name": "Code1"
+    },
+    {
+      "parameters": {
+        "fromEmail": "contato.kauarsouza@gmail.com",
+        "toEmail": "=\t={{ $json.email }}",
+        "subject": "⏰ Você tem tarefas a vencer",
+        "html": "={{ $json.html }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        460,
+        -80
+      ],
+      "id": "4e7a264c-f18e-4ef9-8675-24a355939313",
+      "name": "Send Email1",
+      "webhookId": "d9c56fa1-624b-49ec-b1b8-088ad1126974",
+      "credentials": {
+        "smtp": {
+          "id": "TjuvToxJD11yStog",
+          "name": "SMTP account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger1": {
+      "main": [
+        [
+          {
+            "node": "MongoDB1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MongoDB1": {
+      "main": [
+        [
+          {
+            "node": "If1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If1": {
+      "main": [
+        [
+          {
+            "node": "Code1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code1": {
+      "main": [
+        [
+          {
+            "node": "Send Email1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "09e49e2a-4860-4e67-8c05-6a1fc9fc5bbc",
+  "meta": {
+    "instanceId": "36328e2fc1e05c75164a51d25238979d97c21502872e5bbe658b9d60e29c40ba"
+  },
+  "id": "44kdogbIDUbDMQCZ",
+  "tags": []
+}

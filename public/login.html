@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Entrar — XCL Tasks</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="auth-page">
+  <main class="auth-card">
+    <div class="brand auth-brand">⚡ <span>XCL <em>Tasks</em></span></div>
+
+    <h1 id="auth-title">Entrar</h1>
+    <p class="auth-subtitle" id="auth-subtitle">Acesse com sua conta da equipe.</p>
+
+    <form id="auth-form" autocomplete="off">
+      <label class="field" id="name-field" hidden>
+        <span class="field-label">Seu nome</span>
+        <input type="text" id="auth-name" maxlength="60" placeholder="Ex.: Kauã Souza" />
+      </label>
+      <label class="field">
+        <span class="field-label">E-mail</span>
+        <input type="email" id="auth-email" required placeholder="voce@empresa.com" />
+      </label>
+      <label class="field">
+        <span class="field-label">Senha</span>
+        <input type="password" id="auth-password" required minlength="6" placeholder="••••••••" />
+      </label>
+      <p class="auth-error" id="auth-error" hidden></p>
+      <button type="submit" class="btn btn-primary btn-block" id="auth-submit">Entrar</button>
+    </form>
+  </main>
+
+  <script>
+    const form = document.getElementById('auth-form');
+    const title = document.getElementById('auth-title');
+    const subtitle = document.getElementById('auth-subtitle');
+    const nameField = document.getElementById('name-field');
+    const nameInput = document.getElementById('auth-name');
+    const errorEl = document.getElementById('auth-error');
+    const submitBtn = document.getElementById('auth-submit');
+    let needsSetup = false;
+
+    // Primeira execução (sem usuários)? Vira tela de criação do admin.
+    fetch('/auth/bootstrap')
+      .then((r) => r.json())
+      .then(({ needsSetup: setup }) => {
+        needsSetup = setup;
+        if (setup) {
+          title.textContent = 'Criar conta do administrador';
+          subtitle.textContent = 'Primeira execução: crie a conta que vai gerenciar a equipe.';
+          nameField.hidden = false;
+          nameInput.required = true;
+          submitBtn.textContent = 'Criar conta e entrar';
+        }
+      });
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      errorEl.hidden = true;
+      submitBtn.disabled = true;
+      try {
+        const body = {
+          email: document.getElementById('auth-email').value.trim(),
+          password: document.getElementById('auth-password').value,
+        };
+        if (needsSetup) body.name = nameInput.value.trim();
+
+        const res = await fetch(needsSetup ? '/auth/register' : '/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Erro ao entrar');
+        // Guarda o token da sessão — o app envia no header Authorization.
+        if (data.token) localStorage.setItem('sid', data.token);
+        location.href = '/';
+      } catch (err) {
+        errorEl.textContent = err.message;
+        errorEl.hidden = false;
+      } finally {
+        submitBtn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

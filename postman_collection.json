@@ -1,79 +1,296 @@
 {
   "info": {
-    "name": "Desafio XCL - CRUD Items",
-    "description": "Coleção para testar o CRUD de items. A requisição 'Criar item' salva o _id retornado na variável {{itemId}}, então as requisições de buscar/atualizar/remover já usam esse id automaticamente.",
+    "name": "Desafio XCL - Gerenciador de Tarefas",
+    "description": "Coleção completa: autenticação, gestão de equipe (listar/adicionar/remover membros) e CRUD de tarefas.\n\nComo usar (caminho rápido):\n1. Rode 'Virar admin (dev)' com o e-mail/senha que quiser — funciona não importa o estado do banco: cria ou promove esse e-mail para admin e já autentica. Guarda o cookie em {{sid}} automaticamente.\n2. As demais requisições já reaproveitam {{sid}} no header Cookie.\n3. Para testar como membro, rode 'Login' com as credenciais de um membro (sobrescreve {{sid}}).\n\n'Bootstrap' e 'Criar conta do administrador' continuam aqui para testar o fluxo real de 1ª execução (só funciona com o banco vazio).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
     { "key": "baseUrl", "value": "http://localhost:3000" },
+    { "key": "sid", "value": "" },
+    { "key": "adminName", "value": "Kauã Souza" },
+    { "key": "adminEmail", "value": "admin@xcl.com" },
+    { "key": "adminPassword", "value": "admin123" },
+    { "key": "memberName", "value": "Olivia Bennett" },
+    { "key": "memberEmail", "value": "olivia@xcl.com" },
+    { "key": "memberPassword", "value": "olivia123" },
+    { "key": "memberId", "value": "" },
     { "key": "itemId", "value": "" }
   ],
   "item": [
     {
-      "name": "Healthcheck",
-      "request": {
-        "method": "GET",
-        "url": { "raw": "{{baseUrl}}/health", "host": ["{{baseUrl}}"], "path": ["health"] }
-      }
-    },
-    {
-      "name": "Criar item",
-      "event": [
+      "name": "Autenticação",
+      "item": [
         {
-          "listen": "test",
-          "script": {
-            "exec": [
-              "const body = pm.response.json();",
-              "pm.collectionVariables.set('itemId', body._id);",
-              "pm.test('status 201', () => pm.response.to.have.status(201));",
-              "pm.test('tem _id', () => pm.expect(body._id).to.be.a('string'));"
-            ],
-            "type": "text/javascript"
+          "name": "Virar admin (dev) — qualquer e-mail, sempre funciona",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const setCookie = pm.response.headers.get('Set-Cookie');",
+                  "if (setCookie) {",
+                  "  const match = setCookie.match(/sid=([^;]+)/);",
+                  "  if (match) pm.collectionVariables.set('sid', match[1]);",
+                  "}",
+                  "pm.test('status 200 ou 201', () => pm.expect([200, 201]).to.include(pm.response.code));",
+                  "pm.test('role = admin', () => pm.expect(pm.response.json().role).to.eql('admin'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{adminName}}\",\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/dev-admin", "host": ["{{baseUrl}}"], "path": ["auth", "dev-admin"] },
+            "description": "Atalho de desenvolvimento: autentica QUALQUER e-mail passado como admin, não importa o estado do banco. Se o e-mail já existe, promove para admin e atualiza a senha; se não existe, cria. Sempre loga (cookie salvo em {{sid}}).\n\n⚠️ Rota pensada para testes locais — não deixe exposta se este projeto sair do ambiente local."
+          }
+        },
+        {
+          "name": "Bootstrap (precisa criar admin?)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/auth/bootstrap", "host": ["{{baseUrl}}"], "path": ["auth", "bootstrap"] }
+          }
+        },
+        {
+          "name": "Criar conta do administrador (1ª vez, banco vazio)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const setCookie = pm.response.headers.get('Set-Cookie');",
+                  "if (setCookie) {",
+                  "  const match = setCookie.match(/sid=([^;]+)/);",
+                  "  if (match) pm.collectionVariables.set('sid', match[1]);",
+                  "}",
+                  "pm.test('status 201', () => pm.response.to.have.status(201));",
+                  "pm.test('role = admin', () => pm.expect(pm.response.json().role).to.eql('admin'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{adminName}}\",\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/register", "host": ["{{baseUrl}}"], "path": ["auth", "register"] },
+            "description": "Só funciona quando o banco ainda não tem nenhum usuário (ver 'Bootstrap'). O usuário criado aqui vira admin e herda tarefas antigas."
+          }
+        },
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const setCookie = pm.response.headers.get('Set-Cookie');",
+                  "if (setCookie) {",
+                  "  const match = setCookie.match(/sid=([^;]+)/);",
+                  "  if (match) pm.collectionVariables.set('sid', match[1]);",
+                  "}",
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] },
+            "description": "Troque o body para {{memberEmail}} / {{memberPassword}} para testar as regras de um membro comum. Isso sobrescreve {{sid}} com a sessão desse usuário."
+          }
+        },
+        {
+          "name": "Ver perfil logado (/me)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Cookie", "value": "sid={{sid}}" }],
+            "url": { "raw": "{{baseUrl}}/auth/me", "host": ["{{baseUrl}}"], "path": ["auth", "me"] }
+          }
+        },
+        {
+          "name": "Logout",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.collectionVariables.set('sid', '');"]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Cookie", "value": "sid={{sid}}" }],
+            "url": { "raw": "{{baseUrl}}/auth/logout", "host": ["{{baseUrl}}"], "path": ["auth", "logout"] }
           }
         }
-      ],
-      "request": {
-        "method": "POST",
-        "header": [{ "key": "Content-Type", "value": "application/json" }],
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"name\": \"Meu primeiro item\",\n  \"description\": \"Criado pelo Postman\"\n}"
+      ]
+    },
+    {
+      "name": "Equipe (admin)",
+      "item": [
+        {
+          "name": "Listar equipe",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Cookie", "value": "sid={{sid}}" }],
+            "url": { "raw": "{{baseUrl}}/users", "host": ["{{baseUrl}}"], "path": ["users"] },
+            "description": "Requer sessão de admin (feita via Autenticação > Login)."
+          }
         },
-        "url": { "raw": "{{baseUrl}}/items", "host": ["{{baseUrl}}"], "path": ["items"] }
-      }
-    },
-    {
-      "name": "Listar itens",
-      "request": {
-        "method": "GET",
-        "url": { "raw": "{{baseUrl}}/items", "host": ["{{baseUrl}}"], "path": ["items"] }
-      }
-    },
-    {
-      "name": "Buscar item por id",
-      "request": {
-        "method": "GET",
-        "url": { "raw": "{{baseUrl}}/items/{{itemId}}", "host": ["{{baseUrl}}"], "path": ["items", "{{itemId}}"] }
-      }
-    },
-    {
-      "name": "Atualizar item",
-      "request": {
-        "method": "PUT",
-        "header": [{ "key": "Content-Type", "value": "application/json" }],
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"name\": \"Item atualizado\",\n  \"description\": \"Editado pelo Postman\"\n}"
+        {
+          "name": "Adicionar membro",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  pm.collectionVariables.set('memberId', pm.response.json()._id);",
+                  "}",
+                  "pm.test('status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Cookie", "value": "sid={{sid}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{memberName}}\",\n  \"email\": \"{{memberEmail}}\",\n  \"password\": \"{{memberPassword}}\",\n  \"role\": \"member\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/users", "host": ["{{baseUrl}}"], "path": ["users"] },
+            "description": "Requer sessão de admin. Salva o _id criado em {{memberId}}. 'role' pode ser \"member\" ou \"admin\"."
+          }
         },
-        "url": { "raw": "{{baseUrl}}/items/{{itemId}}", "host": ["{{baseUrl}}"], "path": ["items", "{{itemId}}"] }
-      }
+        {
+          "name": "Remover membro",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Cookie", "value": "sid={{sid}}" }],
+            "url": { "raw": "{{baseUrl}}/users/{{memberId}}", "host": ["{{baseUrl}}"], "path": ["users", "{{memberId}}"] },
+            "description": "Requer sessão de admin. Bloqueado (400) se for a própria conta ou o único administrador."
+          }
+        }
+      ]
     },
     {
-      "name": "Remover item",
-      "request": {
-        "method": "DELETE",
-        "url": { "raw": "{{baseUrl}}/items/{{itemId}}", "host": ["{{baseUrl}}"], "path": ["items", "{{itemId}}"] }
-      }
+      "name": "Dashboard (admin)",
+      "item": [
+        {
+          "name": "Métricas da equipe (/stats)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Cookie", "value": "sid={{sid}}" }],
+            "url": { "raw": "{{baseUrl}}/stats", "host": ["{{baseUrl}}"], "path": ["stats"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Tarefas",
+      "item": [
+        {
+          "name": "Healthcheck",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/health", "host": ["{{baseUrl}}"], "path": ["health"] }
+          }
+        },
+        {
+          "name": "Criar tarefa",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set('itemId', body._id);",
+                  "pm.test('status 201', () => pm.response.to.have.status(201));",
+                  "pm.test('tem _id', () => pm.expect(body._id).to.be.a('string'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Cookie", "value": "sid={{sid}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Minha primeira tarefa\",\n  \"description\": \"Criada pelo Postman\",\n  \"priority\": \"media\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/items", "host": ["{{baseUrl}}"], "path": ["items"] },
+            "description": "A tarefa nasce pertencendo a quem estiver logado em {{sid}}."
+          }
+        },
+        {
+          "name": "Listar tarefas",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Cookie", "value": "sid={{sid}}" }],
+            "url": { "raw": "{{baseUrl}}/items", "host": ["{{baseUrl}}"], "path": ["items"] },
+            "description": "Admin vê as tarefas de todos; membro vê só as próprias."
+          }
+        },
+        {
+          "name": "Buscar tarefa por id",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Cookie", "value": "sid={{sid}}" }],
+            "url": { "raw": "{{baseUrl}}/items/{{itemId}}", "host": ["{{baseUrl}}"], "path": ["items", "{{itemId}}"] }
+          }
+        },
+        {
+          "name": "Atualizar tarefa",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Cookie", "value": "sid={{sid}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Tarefa atualizada\",\n  \"status\": \"concluida\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/items/{{itemId}}", "host": ["{{baseUrl}}"], "path": ["items", "{{itemId}}"] },
+            "description": "403 se a tarefa não pertencer ao usuário logado (e ele não for admin)."
+          }
+        },
+        {
+          "name": "Remover tarefa",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Cookie", "value": "sid={{sid}}" }],
+            "url": { "raw": "{{baseUrl}}/items/{{itemId}}", "host": ["{{baseUrl}}"], "path": ["items", "{{itemId}}"] }
+          }
+        }
+      ]
     }
   ]
 }
