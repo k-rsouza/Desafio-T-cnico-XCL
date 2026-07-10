@@ -14,6 +14,9 @@ const PRIORITY_LABELS = { alta: 'Alta', media: 'Média', baixa: 'Baixa' };
 // ===== Helpers =====
 const $ = (id) => document.getElementById(id);
 
+const icon = (name, size = 16) =>
+  `<svg width="${size}" height="${size}"><use href="#i-${name}"/></svg>`;
+
 async function api(path, options = {}) {
   // Token da sessão vai no header Authorization — funciona em iframe/webview,
   // onde o cookie pode ser bloqueado pelo navegador.
@@ -80,6 +83,60 @@ function formatHours(h) {
   return `${(h / 24).toFixed(1)} dias`;
 }
 
+// Tempo relativo curto (ex.: "há 2 h", "há 3 dias") para a atividade recente.
+function timeAgo(iso) {
+  const s = (Date.now() - new Date(iso)) / 1000;
+  if (s < 60) return 'agora';
+  if (s < 3600) return `há ${Math.floor(s / 60)} min`;
+  if (s < 86400) return `há ${Math.floor(s / 3600)} h`;
+  return `há ${Math.floor(s / 86400)} dia(s)`;
+}
+
+// ===== Toast (substitui alert) =====
+function toast(message, type = 'error') {
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.textContent = message;
+  $('toast-container').appendChild(el);
+  setTimeout(() => {
+    el.classList.add('leaving');
+    setTimeout(() => el.remove(), 300);
+  }, 3500);
+}
+
+// ===== Modal de confirmação (substitui confirm) =====
+function confirmDialog(message, title = 'Excluir tarefa') {
+  return new Promise((resolve) => {
+    $('confirm-title').textContent = title;
+    $('confirm-text').textContent = message;
+    $('confirm-modal').hidden = false;
+
+    const close = (answer) => {
+      $('confirm-modal').hidden = true;
+      $('confirm-ok').onclick = null;
+      $('confirm-cancel').onclick = null;
+      $('confirm-modal').onclick = null;
+      resolve(answer);
+    };
+
+    $('confirm-ok').onclick = () => close(true);
+    $('confirm-cancel').onclick = () => close(false);
+    $('confirm-modal').onclick = (e) => {
+      if (e.target === $('confirm-modal')) close(false);
+    };
+  });
+}
+
+// ===== Skeletons =====
+function showSkeletons() {
+  if (view === 'dashboard') {
+    $('stats-grid').innerHTML = '<div class="skeleton skeleton-tile"></div>'.repeat(4);
+    $('chart').innerHTML = '<div class="skeleton skeleton-block"></div>';
+  } else {
+    $('task-list').innerHTML = '<li class="skeleton skeleton-task"></li>'.repeat(3);
+  }
+}
+
 // ===== Inicialização =====
 async function init() {
   try {
@@ -110,8 +167,15 @@ async function init() {
 // ===== Navegação entre views =====
 function switchView(next) {
   view = next;
-  $('view-dashboard').hidden = view !== 'dashboard';
-  $('view-tasks').hidden = view !== 'tasks';
+  const dash = $('view-dashboard');
+  const tsk = $('view-tasks');
+  dash.hidden = view !== 'dashboard';
+  tsk.hidden = view !== 'tasks';
+  // Reinicia a animação fadeUp da view que entrou
+  const active = view === 'dashboard' ? dash : tsk;
+  active.style.animation = 'none';
+  void active.offsetHeight; // força reflow
+  active.style.animation = '';
   $('view-title').textContent = view === 'dashboard' ? 'Dashboard' : 'Tarefas';
   document.querySelectorAll('.nav-item').forEach((b) => {
     b.classList.toggle('active', b.dataset.view === view);
@@ -163,26 +227,56 @@ async function loadTeam() {
 
 // ===== Dashboard =====
 async function loadStats() {
+  showSkeletons();
   stats = await api('/stats');
   renderStatTiles();
   renderChart();
   renderCapacity();
+  renderActivity();
+}
+
+// Tendência do dia calculada no cliente a partir do last7days já retornado.
+function todayTrend() {
+  const days = stats.last7days;
+  const today = days[days.length - 1] ?? { created: 0, completed: 0 };
+  return { createdToday: today.created, completedToday: today.completed };
 }
 
 function renderStatTiles() {
   const t = stats.totals;
+  const { createdToday, completedToday } = todayTrend();
+
   const tiles = [
-    { label: 'Tarefas concluídas', value: t.completed, sub: `de ${t.tasks} no total`, cls: '' },
-    { label: 'Taxa de conclusão', value: `${t.completionRate}%`, sub: 'de todas as tarefas', cls: t.completionRate >= 50 ? 'good' : '' },
-    { label: 'Pendentes', value: t.pending, sub: t.overdue ? `⚠️ ${t.overdue} vencida(s)` : 'nenhuma vencida', cls: t.overdue ? 'bad' : 'good' },
-    { label: 'Tempo médio de conclusão', value: formatHours(t.avgCompletionHours), sub: 'da criação à conclusão', cls: '' },
+    {
+      label: 'Tarefas concluídas', value: t.completed, iconName: 'check', iconCls: 'green',
+      sub: completedToday > 0 ? `▲ ${completedToday} concluída(s) hoje` : `de ${t.tasks} no total`,
+      cls: completedToday > 0 ? 'good' : '',
+    },
+    {
+      label: 'Taxa de conclusão', value: `${t.completionRate}%`, iconName: 'trend', iconCls: '',
+      sub: 'de todas as tarefas', cls: t.completionRate >= 50 ? 'good' : '',
+    },
+    {
+      label: 'Pendentes', value: t.pending, iconName: 'clock', iconCls: t.overdue ? 'red' : 'amber',
+      sub: t.overdue ? `⚠ ${t.overdue} vencida(s)` : 'nenhuma vencida',
+      cls: t.overdue ? 'bad' : 'good',
+    },
+    {
+      label: 'Tempo médio de conclusão', value: formatHours(t.avgCompletionHours), iconName: 'timer', iconCls: '',
+      sub: createdToday > 0 ? `▲ ${createdToday} criada(s) hoje` : 'da criação à conclusão',
+      cls: '',
+    },
   ];
+
   $('stats-grid').replaceChildren(
-    ...tiles.map(({ label, value, sub, cls }) => {
+    ...tiles.map(({ label, value, sub, cls, iconName, iconCls }) => {
       const div = document.createElement('div');
       div.className = 'card stat-tile';
       div.innerHTML = `
-        <span class="stat-label">${label}</span>
+        <div class="stat-top">
+          <span class="stat-icon ${iconCls}">${icon(iconName, 17)}</span>
+          <span class="stat-label">${label}</span>
+        </div>
         <span class="stat-value">${value}</span>
         <span class="stat-sub ${cls}">${sub}</span>`;
       return div;
@@ -190,29 +284,77 @@ function renderStatTiles() {
   );
 }
 
-// Gráfico de barras (SVG feito à mão — sem biblioteca)
+// Gráfico de linhas suaves com área em gradiente (SVG feito à mão — sem biblioteca)
 function renderChart() {
   const days = stats.last7days;
-  const W = 560, H = 190, padX = 10, padTop = 12, padBottom = 26;
+  const W = 560, H = 200, padTop = 14, padBottom = 28, padLeft = 28, padRight = 14;
+  const innerW = W - padLeft - padRight;
   const innerH = H - padTop - padBottom;
-  const max = Math.max(1, ...days.flatMap((d) => [d.created, d.completed]));
-  const groupW = (W - padX * 2) / days.length;
-  const barW = Math.min(16, groupW / 3.2);
 
-  let svg = '';
-  // linhas de grade horizontais
+  // Teto múltiplo de 3 para as linhas da grade caírem em valores inteiros.
+  const rawMax = Math.max(1, ...days.flatMap((d) => [d.created, d.completed]));
+  const max = Math.ceil(rawMax / 3) * 3;
+
+  const x = (i) => padLeft + (days.length === 1 ? innerW / 2 : (i / (days.length - 1)) * innerW);
+  const y = (v) => padTop + innerH - (v / max) * innerH;
+  const pts = (key) => days.map((d, i) => [x(i), y(d[key])]);
+
+  // Curva suave por Bézier cúbica (Catmull-Rom simplificado).
+  const smooth = (p) => {
+    let d = `M ${p[0][0]} ${p[0][1]}`;
+    for (let i = 1; i < p.length; i++) {
+      const p0 = p[i - 2] || p[i - 1];
+      const p1 = p[i - 1];
+      const p2 = p[i];
+      const p3 = p[i + 1] || p[i];
+      const c1x = p1[0] + (p2[0] - p0[0]) / 6;
+      const c1y = p1[1] + (p2[1] - p0[1]) / 6;
+      const c2x = p2[0] - (p3[0] - p1[0]) / 6;
+      const c2y = p2[1] - (p3[1] - p1[1]) / 6;
+      d += ` C ${c1x} ${c1y}, ${c2x} ${c2y}, ${p2[0]} ${p2[1]}`;
+    }
+    return d;
+  };
+
+  // Fecha a curva até a base para formar a área preenchida.
+  const base = padTop + innerH;
+  const area = (p) => `${smooth(p)} L ${p[p.length - 1][0]} ${base} L ${p[0][0]} ${base} Z`;
+
+  const created = pts('created');
+  const completed = pts('completed');
+
+  let svg = `<defs>
+    <linearGradient id="area-created" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#8b5cf6" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#8b5cf6" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="area-completed" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#22c55e" stop-opacity="0.25"/>
+      <stop offset="100%" stop-color="#22c55e" stop-opacity="0"/>
+    </linearGradient>
+  </defs>`;
+
+  // Grade horizontal + rótulos do eixo Y
   for (let i = 0; i <= 3; i++) {
-    const y = padTop + (innerH / 3) * i;
-    svg += `<line class="chart-grid" x1="${padX}" y1="${y}" x2="${W - padX}" y2="${y}"/>`;
+    const gy = padTop + (innerH / 3) * i;
+    const val = Math.round(max * (1 - i / 3));
+    svg += `<line class="chart-grid" x1="${padLeft}" y1="${gy}" x2="${W - padRight}" y2="${gy}"/>`;
+    svg += `<text class="chart-label" x="${padLeft - 8}" y="${gy + 3}" text-anchor="end">${val}</text>`;
   }
+
+  // Áreas em gradiente por baixo, depois as linhas por cima
+  svg += `<path class="area-created" d="${area(created)}"/>`;
+  svg += `<path class="area-completed" d="${area(completed)}"/>`;
+  svg += `<path class="line-created" d="${smooth(created)}"/>`;
+  svg += `<path class="line-completed" d="${smooth(completed)}"/>`;
+
+  // Pontos com tooltip + rótulos do eixo X
   days.forEach((d, i) => {
-    const cx = padX + i * groupW + groupW / 2;
-    const h1 = (d.created / max) * innerH;
-    const h2 = (d.completed / max) * innerH;
-    svg += `<rect class="bar-created" x="${cx - barW - 1.5}" y="${padTop + innerH - h1}" width="${barW}" height="${Math.max(h1, 2)}" rx="3"/>`;
-    svg += `<rect class="bar-completed" x="${cx + 1.5}" y="${padTop + innerH - h2}" width="${barW}" height="${Math.max(h2, 2)}" rx="3"/>`;
     const [, m, day] = d.date.split('-');
-    svg += `<text class="chart-label" x="${cx}" y="${H - 8}" text-anchor="middle">${day}/${m}</text>`;
+    const label = `${day}/${m}`;
+    svg += `<circle class="chart-dot dot-c1" cx="${x(i)}" cy="${y(d.created)}" r="3.5"><title>${label}: ${d.created} criada(s)</title></circle>`;
+    svg += `<circle class="chart-dot dot-c2" cx="${x(i)}" cy="${y(d.completed)}" r="3.5"><title>${label}: ${d.completed} concluída(s)</title></circle>`;
+    svg += `<text class="chart-label" x="${x(i)}" y="${H - 8}" text-anchor="middle">${label}</text>`;
   });
 
   $('chart').innerHTML = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${svg}</svg>`;
@@ -230,7 +372,10 @@ function renderCapacity() {
       info.innerHTML = `
         <div class="capacity-top">
           <span class="capacity-name">${m.name}</span>
-          <span class="capacity-count">${m.completed}/${m.total} concluídas${m.overdue ? ` · <span class="late">${m.overdue} vencida(s)</span>` : ''}</span>
+          <span>
+            <span class="capacity-count">${m.completed}/${m.total}${m.overdue ? ` · <span class="late">${m.overdue} vencida(s)</span>` : ''}</span>
+            <span class="capacity-pct">${pct}%</span>
+          </span>
         </div>
         <div class="progress"><div class="progress-fill" style="width:${pct}%"></div></div>`;
 
@@ -240,13 +385,49 @@ function renderCapacity() {
   );
 }
 
+// Atividade recente — derivada das tarefas já carregadas (sem endpoint novo).
+function renderActivity() {
+  const list = $('activity-list');
+  if (!list) return;
+
+  const events = [];
+  for (const t of tasks) {
+    const owner = team.find((u) => String(u._id) === t.userId);
+    const who = owner ? owner.name : 'Alguém';
+    if (t.createdAt) events.push({ at: t.createdAt, who, what: t.name, verb: 'criou', done: false });
+    if (t.completedAt) events.push({ at: t.completedAt, who, what: t.name, verb: 'concluiu', done: true });
+  }
+  events.sort((a, b) => (a.at < b.at ? 1 : -1));
+
+  const top = events.slice(0, 5);
+  if (top.length === 0) {
+    list.innerHTML = '<li class="activity-item"><span class="activity-text">Nenhuma atividade ainda.</span></li>';
+    return;
+  }
+
+  list.replaceChildren(
+    ...top.map((e) => {
+      const li = document.createElement('li');
+      li.className = 'activity-item';
+      li.innerHTML = `
+        <span class="activity-dot${e.done ? ' green' : ''}"></span>
+        <span class="activity-text"><strong>${e.who}</strong> ${e.verb} <strong>${e.what}</strong></span>
+        <span class="activity-when">${timeAgo(e.at)}</span>`;
+      return li;
+    }),
+  );
+}
+
 // ===== Tarefas =====
 async function loadTasks() {
   try {
+    if (view === 'tasks') showSkeletons();
     tasks = await api('/items');
     $('error-state').hidden = true;
     renderTasks();
+    if (me?.role === 'admin' && stats) renderActivity();
   } catch (err) {
+    $('task-list').replaceChildren();
     $('error-state').textContent = `Não foi possível carregar as tarefas: ${err.message}`;
     $('error-state').hidden = false;
   }
@@ -266,7 +447,8 @@ function renderTasks() {
 
 function renderTask(task) {
   const li = document.createElement('li');
-  li.className = `task${task.status === 'concluida' ? ' done' : ''}`;
+  const prio = task.priority ?? 'media';
+  li.className = `task prio-${prio}${task.status === 'concluida' ? ' done' : ''}`;
 
   if (editingId === task._id) {
     li.appendChild(renderEditForm(task));
@@ -302,7 +484,7 @@ function renderTask(task) {
 
   const editBtn = document.createElement('button');
   editBtn.className = 'icon-btn';
-  editBtn.textContent = '✏️';
+  editBtn.innerHTML = icon('edit', 15);
   editBtn.title = 'Editar';
   editBtn.addEventListener('click', () => {
     editingId = task._id;
@@ -311,7 +493,7 @@ function renderTask(task) {
 
   const deleteBtn = document.createElement('button');
   deleteBtn.className = 'icon-btn delete';
-  deleteBtn.textContent = '🗑️';
+  deleteBtn.innerHTML = icon('trash', 15);
   deleteBtn.title = 'Excluir';
   deleteBtn.addEventListener('click', () => removeTask(task));
 
@@ -418,8 +600,9 @@ function renderEditForm(task) {
       tasks = tasks.map((t) => (t._id === task._id ? updated : t));
       editingId = null;
       renderTasks();
+      toast('Tarefa atualizada', 'success');
     } catch (err) {
-      alert(err.message);
+      toast(err.message);
     }
   });
 
@@ -437,19 +620,21 @@ async function toggleStatus(task) {
     tasks = tasks.map((t) => (t._id === task._id ? updated : t));
     renderTasks();
   } catch (err) {
-    alert(err.message);
+    toast(err.message);
     renderTasks();
   }
 }
 
 async function removeTask(task) {
-  if (!confirm(`Excluir a tarefa "${task.name}"?`)) return;
+  const ok = await confirmDialog(`Excluir a tarefa "${task.name}"? Essa ação não pode ser desfeita.`);
+  if (!ok) return;
   try {
     await api(`/items/${task._id}`, { method: 'DELETE' });
     tasks = tasks.filter((t) => t._id !== task._id);
     renderTasks();
+    toast('Tarefa excluída', 'success');
   } catch (err) {
-    alert(err.message);
+    toast(err.message);
   }
 }
 
@@ -471,8 +656,9 @@ $('new-task-form').addEventListener('submit', async (e) => {
     e.target.reset();
     $('new-name').focus();
     renderTasks();
+    toast('Tarefa criada', 'success');
   } catch (err) {
-    alert(err.message);
+    toast(err.message);
   } finally {
     button.disabled = false;
   }
@@ -523,6 +709,7 @@ $('add-user-form').addEventListener('submit', async (e) => {
     });
     e.target.reset();
     $('user-modal').hidden = true;
+    toast('Membro adicionado', 'success');
     await loadTeam();
     if (view === 'dashboard') await loadStats();
   } catch (err) {

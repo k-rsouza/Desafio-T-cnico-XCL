@@ -7,24 +7,78 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
+  <!-- Ícones SVG reutilizáveis (sem biblioteca) -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <symbol id="i-dashboard" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/>
+        <rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>
+      </symbol>
+      <symbol id="i-tasks" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9 6h12M9 12h12M9 18h12"/><path d="M3.5 6l1 1 2-2"/><path d="M3.5 12l1 1 2-2"/><path d="M3.5 18l1 1 2-2"/>
+      </symbol>
+      <symbol id="i-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <path d="M12 5v14M5 12h14"/>
+      </symbol>
+      <symbol id="i-logout" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/>
+      </symbol>
+      <symbol id="i-menu" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <path d="M4 6h16M4 12h16M4 18h16"/>
+      </symbol>
+      <symbol id="i-close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <path d="M18 6L6 18M6 6l12 12"/>
+      </symbol>
+      <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20 6L9 17l-5-5"/>
+      </symbol>
+      <symbol id="i-trend" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M23 6l-9.5 9.5-5-5L1 18"/><path d="M17 6h6v6"/>
+      </symbol>
+      <symbol id="i-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/>
+      </symbol>
+      <symbol id="i-timer" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/>
+      </symbol>
+      <symbol id="i-edit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>
+      </symbol>
+      <symbol id="i-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+      </symbol>
+      <symbol id="i-inbox" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5h13L22 12v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6l3.5-7z"/>
+      </symbol>
+      <symbol id="i-bolt" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M13 2L4.5 13.5h6L11 22l8.5-11.5h-6L13 2z"/>
+      </symbol>
+    </defs>
+  </svg>
+
   <div class="layout">
     <!-- ===== Sidebar ===== -->
     <aside class="sidebar" id="sidebar">
-      <div class="brand"> <span>XCL <em>Tasks</em></span></div>
+      <div class="brand">
+        <span class="brand-mark"><svg width="15" height="15"><use href="#i-bolt"/></svg></span>
+        <span>XCL <em>Tasks</em></span>
+      </div>
 
       <nav class="nav">
         <button class="nav-item active" data-view="dashboard" id="nav-dashboard">
-          <span class="nav-icon">▦</span> Dashboard
+          <svg width="17" height="17"><use href="#i-dashboard"/></svg> Dashboard
         </button>
         <button class="nav-item" data-view="tasks">
-          <span class="nav-icon">☰</span> Tarefas
+          <svg width="17" height="17"><use href="#i-tasks"/></svg> Tarefas
         </button>
       </nav>
 
       <div class="team-block" id="team-block" hidden>
         <div class="team-header">
           <span>Minha equipe</span>
-          <button class="icon-btn" id="open-add-user" title="Adicionar membro">+</button>
+          <button class="icon-btn" id="open-add-user" title="Adicionar membro">
+            <svg width="14" height="14"><use href="#i-plus"/></svg>
+          </button>
         </div>
         <ul class="team-list" id="team-list"></ul>
       </div>
@@ -35,7 +89,9 @@
           <div class="me-name" id="me-name"></div>
           <div class="me-role" id="me-role"></div>
         </div>
-        <button class="icon-btn" id="logout-btn" title="Sair">⏻</button>
+        <button class="icon-btn" id="logout-btn" title="Sair">
+          <svg width="16" height="16"><use href="#i-logout"/></svg>
+        </button>
       </div>
     </aside>
     <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
@@ -43,23 +99,31 @@
     <!-- ===== Conteúdo ===== -->
     <div class="main">
       <header class="topbar">
-        <button class="icon-btn menu-btn" id="menu-btn">☰</button>
+        <button class="icon-btn menu-btn" id="menu-btn">
+          <svg width="20" height="20"><use href="#i-menu"/></svg>
+        </button>
         <h1 id="view-title">Dashboard</h1>
       </header>
 
       <!-- Dashboard (admin) -->
-      <section id="view-dashboard" hidden>
+      <section id="view-dashboard" class="view" hidden>
         <div class="stats-grid" id="stats-grid"></div>
         <div class="dash-columns">
-          <div class="card chart-card">
-            <div class="card-header">
-              <h2>Atividade — últimos 7 dias</h2>
-              <div class="legend">
-                <span><i class="dot dot-created"></i> Criadas</span>
-                <span><i class="dot dot-completed"></i> Concluídas</span>
+          <div class="dash-left">
+            <div class="card chart-card">
+              <div class="card-header">
+                <h2>Atividade — últimos 7 dias</h2>
+                <div class="legend">
+                  <span><i class="dot dot-created"></i> Criadas</span>
+                  <span><i class="dot dot-completed"></i> Concluídas</span>
+                </div>
               </div>
+              <div id="chart"></div>
             </div>
-            <div id="chart"></div>
+            <div class="card">
+              <div class="card-header"><h2>Atividade recente</h2></div>
+              <ul class="activity-list" id="activity-list"></ul>
+            </div>
           </div>
           <div class="card team-card">
             <div class="card-header"><h2>Desempenho da equipe</h2></div>
@@ -69,7 +133,7 @@
       </section>
 
       <!-- Tarefas -->
-      <section id="view-tasks" hidden>
+      <section id="view-tasks" class="view" hidden>
         <form id="new-task-form" class="new-task card" autocomplete="off">
           <div class="new-task-row">
             <input type="text" id="new-name" placeholder="O que precisa ser feito?" maxlength="120" required />
@@ -116,7 +180,10 @@
         </div>
 
         <ul id="task-list" class="task-list"></ul>
-        <p id="empty-state" class="empty-state" hidden>Nenhuma tarefa por aqui. 🎉</p>
+        <p id="empty-state" class="empty-state" hidden>
+          <svg width="36" height="36"><use href="#i-inbox"/></svg>
+          Nenhuma tarefa por aqui. 🎉
+        </p>
         <p id="error-state" class="error-state" hidden></p>
       </section>
     </div>
@@ -127,7 +194,9 @@
     <div class="modal card">
       <div class="card-header">
         <h2>Adicionar membro</h2>
-        <button class="icon-btn" id="close-add-user">✕</button>
+        <button class="icon-btn" id="close-add-user">
+          <svg width="16" height="16"><use href="#i-close"/></svg>
+        </button>
       </div>
       <form id="add-user-form" autocomplete="off">
         <label class="field">
@@ -154,6 +223,21 @@
       </form>
     </div>
   </div>
+
+  <!-- ===== Modal: confirmação (substitui confirm()) ===== -->
+  <div class="modal-backdrop" id="confirm-modal" hidden>
+    <div class="modal card">
+      <div class="card-header"><h2 id="confirm-title">Confirmar</h2></div>
+      <p class="modal-text" id="confirm-text"></p>
+      <div class="modal-actions">
+        <button class="btn btn-ghost btn-small" id="confirm-cancel">Cancelar</button>
+        <button class="btn btn-danger btn-small" id="confirm-ok">Excluir</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Toasts ===== -->
+  <div class="toast-container" id="toast-container"></div>
 
   <script src="app.js"></script>
 </body>
