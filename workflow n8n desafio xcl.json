@@ -1,0 +1,176 @@
+{
+  "name": "My workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 8
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "id": "9c01c101-5e83-48c8-93e5-0c09415bea49",
+      "name": "Schedule Trigger",
+      "notesInFlow": true,
+      "notes": "Aciona trigger do workflow a cada x tempo"
+    },
+    {
+      "parameters": {
+        "collection": "items",
+        "options": {},
+        "query": "{\n  \"status\": \"pendente\",\n  \"dueDate\": {\n    \"$ne\": null,\n    \"$lte\": \"2026-07-11T05:19:33.017Z\"\n  }\n}"
+      },
+      "type": "n8n-nodes-base.mongoDb",
+      "typeVersion": 1.2,
+      "position": [
+        220,
+        0
+      ],
+      "id": "e6872b90-e7b3-4d57-a8b2-ffba370ffd24",
+      "name": "MongoDB",
+      "credentials": {
+        "mongoDb": {
+          "id": "BxvSzQC6ObzK4eHK",
+          "name": "MongoDB account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "8b106b42-fe57-425c-a999-d125689880b5",
+              "leftValue": "={{ $input.all().length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        440,
+        0
+      ],
+      "id": "ed140272-6ee2-4fa5-aa78-6a1e121127fb",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "jsCode": "const tarefas = $input.all().map(i => i.json);\n\nconst prioridade = { alta: 'Alta', media: 'Média', baixa: 'Baixa' };\nconst agora = new Date();\nconst fmt = (iso) => new Date(iso).toLocaleString('pt-BR', {\n  day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',\n  timeZone: 'America/Sao_Paulo',\n});\n\nconst linhas = tarefas.map(t => {\n  const vencida = new Date(t.dueDate) < agora;\n  const marca = vencida ? '⚠️ <strong>VENCIDA</strong>' : '📅';\n  return `<li><strong>${t.name}</strong> — prioridade ${prioridade[t.priority] || t.priority} — ${marca} ${fmt(t.dueDate)}</li>`;\n}).join('');\n\nconst html = `\n  <h2>⏰ Tarefas a vencer</h2>\n  <p>Você tem ${tarefas.length} tarefa(s) que já venceram ou vencem nas próximas 24h:</p>\n  <ul>${linhas}</ul>\n`;\n\nreturn [{ json: { html, total: tarefas.length } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        -100
+      ],
+      "id": "fc22c4e1-4afc-4c81-a21b-24cc0498a007",
+      "name": "Code"
+    },
+    {
+      "parameters": {
+        "fromEmail": "contato.kauarsouza@gmail.com",
+        "toEmail": "k.souza@edu.pucrs.br",
+        "subject": "⏰ Você tem tarefas a vencer",
+        "html": "={{ $json.html }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        880,
+        -100
+      ],
+      "id": "7f56642b-ece1-4643-a476-3b8ad4812da1",
+      "name": "Send Email",
+      "webhookId": "d9c56fa1-624b-49ec-b1b8-088ad1126974",
+      "credentials": {
+        "smtp": {
+          "id": "TjuvToxJD11yStog",
+          "name": "SMTP account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "MongoDB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MongoDB": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Code",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Code": {
+      "main": [
+        [
+          {
+            "node": "Send Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "2392cdcc-094a-4988-bc25-5d84f15e482d",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "36328e2fc1e05c75164a51d25238979d97c21502872e5bbe658b9d60e29c40ba"
+  },
+  "id": "93cK8svJ0WneWVF5",
+  "tags": []
+}
