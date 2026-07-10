@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tarefas — Desafio XCL</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <h1>Minhas tarefas</h1>
+      <p class="subtitle" id="summary">Carregando…</p>
+    </header>
+
+    <!-- Formulário de nova tarefa -->
+    <form id="new-task-form" class="new-task" autocomplete="off">
+      <div class="new-task-row">
+        <input
+          type="text"
+          id="new-name"
+          placeholder="O que precisa ser feito?"
+          maxlength="120"
+          required
+        />
+        <input
+          type="text"
+          id="new-description"
+          placeholder="Descrição (opcional)"
+          maxlength="300"
+        />
+      </div>
+      <div class="new-task-row">
+        <label class="field">
+          <span class="field-label">Prioridade</span>
+          <select id="new-priority">
+            <option value="baixa">Baixa</option>
+            <option value="media" selected>Média</option>
+            <option value="alta">Alta</option>
+          </select>
+        </label>
+        <label class="field">
+          <span class="field-label">Prazo (opcional)</span>
+          <input type="datetime-local" id="new-due-date" />
+        </label>
+        <button type="submit" class="btn btn-primary">Adicionar</button>
+      </div>
+    </form>
+
+    <!-- Filtros -->
+    <div class="filters-bar">
+      <nav class="filters" role="tablist" aria-label="Filtrar por status">
+        <button class="filter active" data-filter="todas">Todas</button>
+        <button class="filter" data-filter="pendente">Pendentes</button>
+        <button class="filter" data-filter="concluida">Concluídas</button>
+      </nav>
+      <label class="field field-inline">
+        <span class="field-label">Prioridade</span>
+        <select id="priority-filter">
+          <option value="todas" selected>Todas</option>
+          <option value="alta">Alta</option>
+          <option value="media">Média</option>
+          <option value="baixa">Baixa</option>
+        </select>
+      </label>
+    </div>
+
+    <!-- Lista de tarefas -->
+    <main>
+      <ul id="task-list" class="task-list"></ul>
+      <p id="empty-state" class="empty-state" hidden>Nenhuma tarefa por aqui. 🎉</p>
+      <p id="error-state" class="error-state" hidden></p>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

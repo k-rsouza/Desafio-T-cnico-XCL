@@ -20,6 +20,8 @@ console.log(`Conectado ao MongoDB em ${MONGO_URL} (db: ${MONGO_DB})`);
 
 const app = express();
 app.use(express.json());
+// Serve o frontend (pasta public/) — http://localhost:3000 abre a interface.
+app.use(express.static('public'));
 
 // Converte o :id da URL em ObjectId, ou null se o formato for inválido.
 function toObjectId(id) {
@@ -55,21 +57,43 @@ app.get('/items/:id', async (req, res, next) => {
 // Status válidos para uma tarefa. Toda tarefa nova nasce como "pendente".
 const STATUSES = ['pendente', 'concluida'];
 
+// Prioridades válidas. Toda tarefa nova nasce como "media".
+const PRIORITIES = ['baixa', 'media', 'alta'];
+
+// Normaliza o prazo recebido do cliente.
+// Aceita: null (sem prazo) ou uma data válida (ISO, ex.: "2026-07-15T14:30:00.000Z").
+// Retorna { ok, value } — value é a data em ISO UTC (ou null), pronta pra salvar.
+function parseDueDate(value) {
+  if (value === null || value === '' || value === undefined) return { ok: true, value: null };
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return { ok: false };
+  return { ok: true, value: date.toISOString() };
+}
+
 // CRIAR
 app.post('/items', async (req, res, next) => {
   try {
-    const { name, description, status } = req.body ?? {};
+    const { name, description, status, priority, dueDate } = req.body ?? {};
     if (!name || typeof name !== 'string') {
       return res.status(400).json({ error: 'O campo "name" é obrigatório e deve ser texto' });
     }
     if (status !== undefined && !STATUSES.includes(status)) {
       return res.status(400).json({ error: `O campo "status" deve ser um de: ${STATUSES.join(', ')}` });
     }
+    if (priority !== undefined && !PRIORITIES.includes(priority)) {
+      return res.status(400).json({ error: `O campo "priority" deve ser um de: ${PRIORITIES.join(', ')}` });
+    }
+    const due = parseDueDate(dueDate);
+    if (!due.ok) {
+      return res.status(400).json({ error: 'O campo "dueDate" deve ser uma data válida (ISO) ou null' });
+    }
     const now = new Date().toISOString();
     const item = {
       name: name.trim(),
       description: description ?? null,
       status: status ?? 'pendente',
+      priority: priority ?? 'media',
+      dueDate: due.value,
       createdAt: now,
       updatedAt: now,
     };
@@ -86,18 +110,29 @@ app.put('/items/:id', async (req, res, next) => {
     const _id = toObjectId(req.params.id);
     if (!_id) return res.status(404).json({ error: 'Item não encontrado' });
 
-    const { name, description, status } = req.body ?? {};
+    const { name, description, status, priority, dueDate } = req.body ?? {};
     if (name !== undefined && (typeof name !== 'string' || name.trim() === '')) {
       return res.status(400).json({ error: 'O campo "name" deve ser um texto não vazio' });
     }
     if (status !== undefined && !STATUSES.includes(status)) {
       return res.status(400).json({ error: `O campo "status" deve ser um de: ${STATUSES.join(', ')}` });
     }
+    if (priority !== undefined && !PRIORITIES.includes(priority)) {
+      return res.status(400).json({ error: `O campo "priority" deve ser um de: ${PRIORITIES.join(', ')}` });
+    }
 
     const changes = { updatedAt: new Date().toISOString() };
     if (name !== undefined) changes.name = name.trim();
     if (description !== undefined) changes.description = description;
     if (status !== undefined) changes.status = status;
+    if (priority !== undefined) changes.priority = priority;
+    if (dueDate !== undefined) {
+      const due = parseDueDate(dueDate);
+      if (!due.ok) {
+        return res.status(400).json({ error: 'O campo "dueDate" deve ser uma data válida (ISO) ou null' });
+      }
+      changes.dueDate = due.value;
+    }
 
     const item = await items.findOneAndUpdate(
       { _id },
