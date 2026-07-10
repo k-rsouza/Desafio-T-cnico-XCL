@@ -1,0 +1,79 @@
+{
+  "info": {
+    "name": "Desafio XCL - CRUD Items",
+    "description": "Coleção para testar o CRUD de items. A requisição 'Criar item' salva o _id retornado na variável {{itemId}}, então as requisições de buscar/atualizar/remover já usam esse id automaticamente.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000" },
+    { "key": "itemId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Healthcheck",
+      "request": {
+        "method": "GET",
+        "url": { "raw": "{{baseUrl}}/health", "host": ["{{baseUrl}}"], "path": ["health"] }
+      }
+    },
+    {
+      "name": "Criar item",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "const body = pm.response.json();",
+              "pm.collectionVariables.set('itemId', body._id);",
+              "pm.test('status 201', () => pm.response.to.have.status(201));",
+              "pm.test('tem _id', () => pm.expect(body._id).to.be.a('string'));"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Meu primeiro item\",\n  \"description\": \"Criado pelo Postman\"\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/items", "host": ["{{baseUrl}}"], "path": ["items"] }
+      }
+    },
+    {
+      "name": "Listar itens",
+      "request": {
+        "method": "GET",
+        "url": { "raw": "{{baseUrl}}/items", "host": ["{{baseUrl}}"], "path": ["items"] }
+      }
+    },
+    {
+      "name": "Buscar item por id",
+      "request": {
+        "method": "GET",
+        "url": { "raw": "{{baseUrl}}/items/{{itemId}}", "host": ["{{baseUrl}}"], "path": ["items", "{{itemId}}"] }
+      }
+    },
+    {
+      "name": "Atualizar item",
+      "request": {
+        "method": "PUT",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Item atualizado\",\n  \"description\": \"Editado pelo Postman\"\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/items/{{itemId}}", "host": ["{{baseUrl}}"], "path": ["items", "{{itemId}}"] }
+      }
+    },
+    {
+      "name": "Remover item",
+      "request": {
+        "method": "DELETE",
+        "url": { "raw": "{{baseUrl}}/items/{{itemId}}", "host": ["{{baseUrl}}"], "path": ["items", "{{itemId}}"] }
+      }
+    }
+  ]
+}

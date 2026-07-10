@@ -1,0 +1,13 @@
+services:
+  mongo:
+    image: mongo:7
+    container_name: desafio-xcl-mongo
+    restart: unless-stopped
+    ports:
+      # Host 27018 para não conflitar com outros Mongo locais; dentro do container continua 27017.
+      - "27018:27017"
+    volumes:
+      - mongo-data:/data/db
+
+volumes:
+  mongo-data:
