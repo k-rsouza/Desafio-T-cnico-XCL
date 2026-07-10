@@ -52,8 +52,9 @@ docker-compose.yml   # serviço do MongoDB
 
 ## Endpoints
 
-Recurso de exemplo: `items`. Campos enviados: `name` (obrigatório) e
-`description` (opcional). O banco adiciona automaticamente `_id`, `createdAt`
+Recurso de exemplo: `items`. Campos enviados: `name` (obrigatório),
+`description` (opcional) e `status` (opcional: `pendente` ou `concluida`;
+padrão `pendente`). O banco adiciona automaticamente `_id`, `createdAt`
 e `updatedAt`.
 
 | Método | Rota          | Descrição                  | Status |

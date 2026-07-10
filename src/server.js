@@ -52,17 +52,24 @@ app.get('/items/:id', async (req, res, next) => {
   }
 });
 
+// Status válidos para uma tarefa. Toda tarefa nova nasce como "pendente".
+const STATUSES = ['pendente', 'concluida'];
+
 // CRIAR
 app.post('/items', async (req, res, next) => {
   try {
-    const { name, description } = req.body ?? {};
+    const { name, description, status } = req.body ?? {};
     if (!name || typeof name !== 'string') {
       return res.status(400).json({ error: 'O campo "name" é obrigatório e deve ser texto' });
+    }
+    if (status !== undefined && !STATUSES.includes(status)) {
+      return res.status(400).json({ error: `O campo "status" deve ser um de: ${STATUSES.join(', ')}` });
     }
     const now = new Date().toISOString();
     const item = {
       name: name.trim(),
       description: description ?? null,
+      status: status ?? 'pendente',
       createdAt: now,
       updatedAt: now,
     };
@@ -79,14 +86,18 @@ app.put('/items/:id', async (req, res, next) => {
     const _id = toObjectId(req.params.id);
     if (!_id) return res.status(404).json({ error: 'Item não encontrado' });
 
-    const { name, description } = req.body ?? {};
+    const { name, description, status } = req.body ?? {};
     if (name !== undefined && (typeof name !== 'string' || name.trim() === '')) {
       return res.status(400).json({ error: 'O campo "name" deve ser um texto não vazio' });
+    }
+    if (status !== undefined && !STATUSES.includes(status)) {
+      return res.status(400).json({ error: `O campo "status" deve ser um de: ${STATUSES.join(', ')}` });
     }
 
     const changes = { updatedAt: new Date().toISOString() };
     if (name !== undefined) changes.name = name.trim();
     if (description !== undefined) changes.description = description;
+    if (status !== undefined) changes.status = status;
 
     const item = await items.findOneAndUpdate(
       { _id },
