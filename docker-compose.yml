@@ -9,5 +9,24 @@ services:
     volumes:
       - mongo-data:/data/db
 
+  n8n:
+    image: n8nio/n8n:1.98.0
+    container_name: desafio-xcl-n8n
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    volumes:
+      - n8n-data:/home/node/.n8n
+    environment:
+      N8N_HOST: localhost
+      N8N_PORT: 5678
+      N8N_PROTOCOL: http
+      WEBHOOK_URL: http://localhost:5678/
+      GENERIC_TIMEZONE: America/Sao_Paulo
+      TZ: America/Sao_Paulo
+    depends_on:
+      - mongo
+
 volumes:
   mongo-data:
+  n8n-data:
