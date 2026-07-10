@@ -22,21 +22,46 @@ e-mail de lembrete das tarefas a vencer.
 ## Arquitetura
 
 ```
-┌──────────────┐      ┌─────────────────────┐      ┌──────────────┐
-│  Navegador   │─────▶│  API + Frontend     │─────▶│              │
-│ (frontend)   │◀─────│  Node.js/Express    │◀─────│   MongoDB    │
-└──────────────┘      │  :3000 (no host)    │      │   :27017     │
-                      └─────────────────────┘      │  (container) │
-                                                    │              │
-┌──────────────┐      ┌─────────────────────┐      │  publicado   │
-│    E-mail    │◀─────│  n8n (automação)    │─────▶│  em :27018   │
-│  (lembrete)  │      │  :5678 (container)  │      │   no host    │
-└──────────────┘      └─────────────────────┘      └──────────────┘
+┌──────────────────────────────────────────────────┐
+│  NAVEGADOR — frontend (public/)                    │
+│  login · dashboard · tarefas                       │
+└───────────────────────┬────────────────────────────┘
+        requisições HTTP/JSON  (token no header Authorization)
+                        │  ▲ respostas
+                        ▼  │
+┌──────────────────────────────────────────────────┐
+│  API — Express / Node  ·  :3000 (host)             │
+│  serve os estáticos de public/  +  rotas REST:     │
+│  /auth · /items · /users · /stats                  │
+└───────────────────────┬────────────────────────────┘
+                driver mongodb
+                        │  ▲
+                        ▼  │
+┌──────────────────────────────────────────────────┐
+│  MongoDB  ·  :27017 (container) / :27018 (host)    │
+│  coleções:  users · items · sessions               │
+└───────────────────────▲────────────────────────────┘
+                        │  lê direto (agregação)
+┌───────────────────────┴────────────────────────────┐
+│  n8n  ·  :5678 (container)                          │
+│  Schedule diário → agrupa tarefas a vencer por      │──▶  E-mail
+│  dono → envia um lembrete a cada pessoa             │    (Gmail SMTP)
+└──────────────────────────────────────────────────┘
 ```
 
-- **API + Frontend**: rodam no host via `npm start`, acessam o Mongo em `localhost:27018`.
-- **MongoDB e n8n**: sobem via Docker Compose, na mesma rede. O n8n acessa o
-  Mongo pelo nome do serviço (`mongo:27017`).
+O fluxo de cima para baixo: o **navegador** faz requisições para a **API**, que
+por sua vez fala com o **MongoDB**; as respostas voltam pelo mesmo caminho. Pontos
+importantes:
+
+- **A API serve o próprio frontend.** Os arquivos de `public/` são entregues como
+  estáticos pelo Express, então UI e API vivem no mesmo servidor (`:3000`, mesma
+  origem — sem CORS).
+- **O MongoDB é a fonte única de dados.** Roda em container e é publicado no host
+  na porta `27018` (dentro do container continua `27017`).
+- **O n8n é um consumidor independente.** Não passa pela API: lê o Mongo
+  diretamente (por agregação) e envia os e-mails de lembrete. Sobe junto no
+  Docker Compose, na mesma rede, e acessa o banco pelo nome do serviço
+  (`mongo:27017`).
 - **Persistência**: driver nativo `mongodb` (sem ODM). Dados no volume `mongo-data`.
 
 ---
@@ -89,20 +114,65 @@ Parar os containers: `docker compose down` (dados preservados nos volumes
 
 ```
 src/
-├── server.js            # bootstrap: liga middlewares, rotas e migrações
-├── db.js                # conexão com o MongoDB
-├── auth.js              # senhas (scrypt), sessões, middlewares e rotas /auth
-├── items.js             # CRUD de tarefas (com posse por usuário)
-└── team.js              # equipe (/users) e métricas do dashboard (/stats)
-public/                  # frontend (servido pelo próprio Express)
-├── login.html           # tela de login / criação do 1º admin
-├── index.html           # app: dashboard + tarefas
-├── styles.css           # tema dark responsivo (mobile-first)
-└── app.js               # lógica: auth, dashboard (gráfico SVG), CRUD, equipe
+├── server.js   # ponto de entrada da API (detalhado abaixo)
+├── db.js       # abre a conexão com o MongoDB
+├── auth.js     # autenticação: senhas, sessões, middlewares e rotas /auth
+├── items.js    # CRUD de tarefas (rotas /items)
+└── team.js     # equipe e dashboard (rotas /users e /stats)
+public/         # frontend, servido como estático pela própria API
+├── login.html  # login / criação do 1º admin
+├── index.html  # app (sidebar, dashboard, tarefas)
+├── styles.css  # tema dark responsivo (mobile-first)
+└── app.js      # frontend: fetch com token, telas, gráfico SVG, CRUD, equipe
 docker-compose.yml       # serviços mongo + n8n
 .env.example             # modelo de variáveis de ambiente
 postman_collection.json  # coleção do Postman para testar a API
 ```
+
+### O que cada módulo do backend faz
+
+**`server.js`** — ponto de entrada. Não é "só bootstrap": ele conecta no Mongo
+(via `db.js`); roda uma **migração pontual** (tarefas concluídas antigas ganham
+`completedAt`); configura os middlewares (`express.json` e
+`express.static('public')`, que é o que serve o frontend); **monta os routers
+aplicando os guards de autenticação** — `/auth` é público, enquanto `/items` e as
+rotas de equipe (`/users`, `/stats`) passam pelo `requireAuth`; define o
+`/health`, o 404 e o handler central de erros; sobe o servidor e fecha a conexão
+no `Ctrl+C`.
+
+**`db.js`** — lê o `.env`, abre o `MongoClient` e devolve `{ client, db }`.
+
+**`auth.js`** — tudo de autenticação:
+- `hashPassword` / `verifyPassword` (scrypt nativo)
+- criação/validação de sessão e `getToken` (lê o token do header `Authorization`
+  ou, como fallback, do cookie)
+- middlewares `requireAuth` e `requireAdmin`
+- rotas `/auth`: `bootstrap`, `dev-admin`, `register`, `login`, `logout`, `me`
+
+**`items.js`** — o CRUD de tarefas. Traz os helpers de validação (`toObjectId`,
+`parseDueDate`, listas `STATUSES` e `PRIORITIES`) e **5 rotas**, cada uma
+aplicando a regra de posse (membro só mexe nas próprias; admin em qualquer uma):
+
+| Rota                | O que faz                                                    |
+| ------------------- | ------------------------------------------------------------ |
+| GET `/items`        | lista (membro: só as suas; admin: todas)                     |
+| GET `/items/:id`    | busca uma tarefa (checa posse)                               |
+| POST `/items`       | cria — nasce do usuário logado, `completedAt = null`         |
+| PUT `/items/:id`    | atualização **parcial**; ao concluir, grava `completedAt`    |
+| DELETE `/items/:id` | remove (checa posse)                                         |
+
+**`team.js`** — rotas exclusivas de admin: `GET /users` (lista a equipe),
+`POST /users` (cadastra membro), `DELETE /users/:id` (remove, com as travas de
+segurança) e `GET /stats` (monta as métricas do dashboard por agregação).
+
+### Onde mora cada rota
+
+| Prefixo                            | Arquivo      |
+| ---------------------------------- | ------------ |
+| `/health`                          | `server.js`  |
+| `/auth/*`                          | `auth.js`    |
+| `/items`, `/items/:id`             | `items.js`   |
+| `/users`, `/users/:id`, `/stats`   | `team.js`    |
 
 ---
 
@@ -262,14 +332,16 @@ Exemplo de documento:
 
 ## Automação de lembretes (n8n)
 
-Um workflow no n8n roda diariamente, busca as tarefas **pendentes que já
-venceram ou vencem nas próximas 24h** e envia um **e-mail** com a lista.
+Um workflow no n8n roda diariamente e envia um **lembrete pessoal**: cada
+usuário recebe um e-mail só com **as próprias** tarefas **pendentes que já
+venceram ou vencem nas próximas 24h**. O agrupamento por dono e o e-mail de
+cada um saem de uma única agregação no Mongo (`$group` + `$lookup`).
 
 ### Fluxo do workflow
 
 ```
-Schedule Trigger  →  MongoDB (Find)  →  Code (monta e-mail)  →  Send Email (SMTP)
-  (todo dia 08h)      (query filtro)     (return [] se vazio)     (Gmail SMTP)
+Schedule Trigger  →  MongoDB (Aggregate)  →  Code (1 e-mail por dono)  →  Send Email (SMTP)
+  (todo dia 08h)      (agrupa por usuário)    (return [] se vazio)        (1 envio por pessoa)
 ```
 
 O n8n sobe junto no `docker-compose.yml`, então não precisa de nenhuma
@@ -292,42 +364,40 @@ Na credencial MongoDB do n8n, use **Configuration Type: `Connection String`**
 > interna), **não** `localhost:27018`. A string não pode ter `@` (não há
 > usuário/senha).
 
-### 2. Nó MongoDB (Find)
+### 2. Nó MongoDB (Aggregate)
 
-- **Operation:** `Find`
+- **Operation:** `Aggregate`
 - **Collection:** `items`
-- **Query (JSON Format)** — a query final do lembrete (campo em **modo
+- **Query (JSON Format)** — pipeline que filtra as pendentes vencendo, agrupa
+  por dono e junta com `users` para pegar nome/e-mail (campo em **modo
   expressão**, por causa da data dinâmica):
 
 ```json
-{
-  "status": "pendente",
-  "dueDate": {
-    "$ne": null,
-    "$lte": "{{ $now.plus({ hours: 24 }).toUTC().toISO() }}"
-  }
-}
+[
+  { "$match": { "status": "pendente", "dueDate": { "$ne": null, "$lte": "{{ $now.plus({ hours: 24 }).toUTC().toISO() }}" } } },
+  { "$group": { "_id": "$userId", "tasks": { "$push": { "name": "$name", "priority": "$priority", "dueDate": "$dueDate" } } } },
+  { "$addFields": { "userObjId": { "$toObjectId": "$_id" } } },
+  { "$lookup": { "from": "users", "localField": "userObjId", "foreignField": "_id", "as": "user" } },
+  { "$unwind": "$user" },
+  { "$project": { "_id": 0, "email": "$user.email", "name": "$user.name", "tasks": 1 } }
+]
 ```
 
 Como funciona: `$now.plus({ hours: 24 }).toUTC().toISO()` gera a data de "agora +
-24h" em ISO UTC (ex.: `2026-07-11T05:14:00.000Z`) — **mesmo formato** em que o
-`dueDate` é salvo. O `$lte` (menor ou igual) pega tudo que vence até esse limite,
-ou seja, o que **já venceu** e o que **vence nas próximas 24h**.
+24h" em ISO UTC — **mesmo formato** em que o `dueDate` é salvo, então o `$lte`
+compara certo (pega o vencido e o que vence em 24h). O `$group` junta as tarefas
+por `userId`; o `$toObjectId` + `$lookup` traz nome e e-mail do dono. Saída: um
+documento **por pessoa**, no formato `{ email, name, tasks: [...] }`.
 
-> Query mais simples para testar a conexão (retorna todas as pendentes com
-> prazo): `{ "status": "pendente", "dueDate": { "$ne": null } }`
+### 3. Nó Code (um e-mail por pessoa)
 
-### 3. Nó Code (monta o corpo do e-mail)
-
-Linguagem JavaScript, modo **"Run Once for All Items"**. Transforma as tarefas
-em uma lista HTML única. A primeira linha (`return []`) garante que **nenhum
-e-mail é enviado quando não há tarefas** — evita spam diário:
+Linguagem JavaScript, modo **"Run Once for All Items"**. Recebe um grupo por
+pessoa e devolve um item por pessoa (com o HTML personalizado). O `return []`
+garante que **nenhum e-mail é enviado quando não há ninguém com tarefa vencendo**:
 
 ```javascript
-const tarefas = $input.all().map(i => i.json);
-
-// Sem tarefas vencendo? Não retorna nada -> Send Email é pulado (sem e-mail vazio).
-if (tarefas.length === 0) return [];
+const grupos = $input.all().map((i) => i.json);
+if (grupos.length === 0) return []; // ninguém com tarefa vencendo -> nenhum e-mail
 
 const prioridade = { alta: 'Alta', media: 'Média', baixa: 'Baixa' };
 const agora = new Date();
@@ -336,20 +406,19 @@ const fmt = (iso) => new Date(iso).toLocaleString('pt-BR', {
   timeZone: 'America/Sao_Paulo',
 });
 
-const linhas = tarefas.map((t) => {
-  const vencida = new Date(t.dueDate) < agora;
-  const marca = vencida ? '⚠️ <strong>VENCIDA</strong>' : '📅';
-  return `<li><strong>${t.name}</strong> — prioridade ${prioridade[t.priority] || t.priority} — ${marca} ${fmt(t.dueDate)}</li>`;
-}).join('');
-
-const html = `
-  <h2>⏰ Tarefas a vencer</h2>
-  <p>Você tem ${tarefas.length} tarefa(s) que já venceram ou vencem nas próximas 24h:</p>
-  <ul>${linhas}</ul>
-`;
-
-return [{ json: { html, total: tarefas.length } }];
+return grupos.map((g) => {
+  const linhas = g.tasks.map((t) => {
+    const vencida = new Date(t.dueDate) < agora;
+    const marca = vencida ? '⚠️ <strong>VENCIDA</strong>' : '📅';
+    return `<li><strong>${t.name}</strong> — prioridade ${prioridade[t.priority] || t.priority} — ${marca} ${fmt(t.dueDate)}</li>`;
+  }).join('');
+  const html = `<h2>⏰ Olá, ${g.name}!</h2><p>Estas tarefas suas já venceram ou vencem nas próximas 24h:</p><ul>${linhas}</ul>`;
+  return { json: { email: g.email, name: g.name, html, total: g.tasks.length } };
+});
 ```
+
+Cada item de saída vira um e-mail — o Send Email roda uma vez por item, então
+sai **um e-mail por pessoa**.
 
 ### 4. Nó Send Email (SMTP)
 
@@ -373,7 +442,7 @@ Campos do nó:
 | Campo        | Valor                          |
 | ------------ | ------------------------------ |
 | From Email   | seu-email@gmail.com (= User)   |
-| To Email     | destinatário do lembrete       |
+| To Email     | `={{ $json.email }}` (dinâmico — cada pessoa recebe o seu) |
 | Subject      | `⏰ Você tem tarefas a vencer`  |
 | Email Format | HTML                           |
 | HTML         | `={{ $json.html }}`            |
