@@ -70,6 +70,7 @@ importantes:
 
 - Node.js 18+ (testado na v25)
 - Docker + Docker Compose
+- Mongo DB Compass (opcional, caso queira visualizar os dados no banco)
 
 ---
 
@@ -282,15 +283,11 @@ Para testar no Postman, importe [`postman_collection.json`](postman_collection.j
 
 ## Frontend
 
-Interface web em HTML/CSS/JS puro (sem framework), servida pelo próprio Express
-em `http://localhost:3000`. Tema **dark** de dashboard, com sidebar fixa
-(gaveta no mobile).
+Interface web em HTML/CSS/JS puro (sem framework), servida pelo próprio Express em `http://localhost:3000`.
 
 **Dashboard (admin):**
 - Stat tiles: concluídas, taxa de conclusão, pendentes/vencidas e tempo médio
   de conclusão
-- Gráfico de barras (SVG feito à mão, sem biblioteca): criadas × concluídas
-  nos últimos 7 dias
 - Painel "Desempenho da equipe": avatar, progresso de conclusão e vencidas
   por membro
 - Sidebar com a equipe e botão **+** para cadastrar membro (modal)
@@ -441,7 +438,7 @@ Campos do nó:
 
 | Campo        | Valor                          |
 | ------------ | ------------------------------ |
-| From Email   | seu-email@gmail.com (= User)   |
+| From Email   | seu-email@gmail.com (User)   |
 | To Email     | `={{ $json.email }}` (dinâmico — cada pessoa recebe o seu) |
 | Subject      | `⏰ Você tem tarefas a vencer`  |
 | Email Format | HTML                           |
@@ -449,16 +446,7 @@ Campos do nó:
 
 > O **From** precisa ser a mesma conta do SMTP — o Gmail não deixa enviar em
 > nome de outro endereço.
-
-### Por que não precisa de nó de código na aplicação (sem webhook)
-
-O lembrete é disparado pela **passagem do tempo** (prazo se aproximando), não por
-uma ação na aplicação. Por isso o gatilho certo é o **Schedule** do n8n lendo o
-banco — não um webhook/hook no código. Um webhook só faria sentido para reações
-**imediatas a eventos** (ex.: "notificar assim que uma tarefa é criada").
-
 ---
-
 ## Scripts úteis
 
 Comandos `mongosh` executados no container (`docker exec desafio-xcl-mongo
@@ -501,19 +489,16 @@ db.items.find(
 
 ## Troubleshooting
 
-Erros reais que enfrentamos configurando o n8n e como resolvê-los.
+Erros reais que foram enfrentados configurando o n8n e como resolvê-los.
 
 | Erro no n8n | Causa | Solução |
 | ----------- | ----- | ------- |
 | `URI contained empty userinfo section` | Modo "Values" (ou string com `@`) gera `mongodb://:@host` com usuário/senha vazios | Use **Connection String** `mongodb://mongo:27017/desafio_xcl`, sem `@`, User/Password vazios |
 | `getaddrinfo ENOTFOUND host.docker.internal` | n8n em container não resolve o host quando não há host-gateway | Rode o n8n no **mesmo compose** do Mongo e use o nome do serviço `mongo` |
 | `getaddrinfo ENOTFOUND desafio-xcl-mongo` | n8n estava em outra rede Docker / cache de DNS do processo antigo | Colocar ambos no mesmo compose resolve por construção |
-| TLS handshake / erro ao conectar | "Use TLS" ligado, mas o Mongo local não usa TLS | **Desligue** o Use TLS |
+| `TLS handshake / erro ao conectar` | "Use TLS" ligado, mas o Mongo local não usa TLS | **Desligue** o Use TLS |
 
 **Regra de ouro da conexão:**
 
 - **De fora do Docker** (Compass, API no host): `mongodb://localhost:27018`
 - **De dentro do Docker** (n8n): `mongodb://mongo:27017`
-
-Nunca use `localhost` dentro de um container — ali `localhost` é o próprio
-container, não a máquina.
